@@ -1,8 +1,10 @@
 FROM docker-dev-artifactory.workday.com/dpm/golang:1.14-alpine-gcc
 # Assumes gcc and bash are present
 # RUN apk add git bash gcc
-COPY . .
 
+COPY . .
+ARG goproxy=""
+ENV GOPROXY=$goproxy
 RUN ./fastbuild.sh
 
 FROM docker-dev-artifactory.workday.com/dpm/centos:7.7.1908
