@@ -1,4 +1,4 @@
-FROM golang:1.14-alpine
+FROM docker-dev-artifactory.workday.com/dpm/golang:1.14-alpine
 RUN apk add git bash gcc
 COPY . .
 
