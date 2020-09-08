@@ -36,7 +36,8 @@ pipeline {
             sh 'cp $dpmbuildfile ~/.docker/config.json'
           }
 
-		  sh 'docker build -t docker-dev-artifactory.workday.com/dpm/redisshake:${BUILD_ID} .'
+	  withCredentials([usernameColonPassword(credentialsId: 'DPMBUILD_ARTIF', variable: 'USERPASS')]) {
+	    sh 'docker build --build-arg goproxy="https://${USERPASS}@artifactory.workday.com/artifactory/api/go/go-golang" -t docker-dev-artifactory.workday.com/dpm/redisshake:${BUILD_ID} .'
         }
       }
 
