@@ -29,15 +29,16 @@ pipeline {
           BUILD_ID = VersionNumber([versionNumberString : '${BUILD_YEAR}.${BUILD_MONTH}.${BUILD_DAY}.' + env.CHANGE_ID + '.' + env.BUILD_NUMBER])
         }
         steps {
-          deleteDir()
-          checkout scm
+            deleteDir()
+            checkout scm
 
-          withCredentials([file(credentialsId: 'DPMBUILD-ARTIF-CREDENTIALS', variable: 'dpmbuildfile')]) {
-            sh 'cp $dpmbuildfile ~/.docker/config.json'
-          }
+            withCredentials([file(credentialsId: 'DPMBUILD-ARTIF-CREDENTIALS', variable: 'dpmbuildfile')]) {
+                sh 'cp $dpmbuildfile ~/.docker/config.json'
+            }
 
-	  withCredentials([usernameColonPassword(credentialsId: 'DPMBUILD_ARTIF', variable: 'USERPASS')]) {
-	    sh 'docker build --build-arg goproxy="https://${USERPASS}@artifactory.workday.com/artifactory/api/go/go-golang" -t docker-dev-artifactory.workday.com/dpm/redisshake:${BUILD_ID} .'
+            withCredentials([usernameColonPassword(credentialsId: 'DPMBUILD_ARTIF', variable: 'USERPASS')]) {
+                sh 'docker build --build-arg goproxy="https://${USERPASS}@artifactory.workday.com/artifactory/api/go/go-golang" -t docker-dev-artifactory.workday.com/dpm/redisshake:${BUILD_ID} .'
+            }
         }
       }
 
