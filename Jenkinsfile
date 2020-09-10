@@ -27,6 +27,7 @@ pipeline {
       stage('Build') {
         environment {
           BUILD_ID = VersionNumber([versionNumberString : '${BUILD_YEAR}.${BUILD_MONTH}.${BUILD_DAY}.' + env.CHANGE_ID + '.' + env.BUILD_NUMBER])
+          IMAGE = 'docker-dev-artifactory.workday.com/dpm/redisshake:${BUILD_ID}'
         }
         steps {
             deleteDir()
@@ -37,7 +38,8 @@ pipeline {
             }
 
             withCredentials([usernameColonPassword(credentialsId: 'DPMBUILD_ARTIF', variable: 'USERPASS')]) {
-                sh 'docker build --build-arg goproxy="https://${USERPASS}@artifactory.workday.com/artifactory/api/go/go" -t docker-dev-artifactory.workday.com/dpm/redisshake:${BUILD_ID} .'
+                sh 'docker build --build-arg goproxy="https://${USERPASS}@artifactory.workday.com/artifactory/api/go/go" -t ${IMAGE} .'
+                sh 'docker push ${IMAGE}'
             }
         }
       }
