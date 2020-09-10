@@ -37,7 +37,7 @@ pipeline {
             }
 
             withCredentials([usernameColonPassword(credentialsId: 'DPMBUILD_ARTIF', variable: 'USERPASS')]) {
-                sh 'docker build --build-arg goproxy="https://${USERPASS}@artifactory.workday.com/artifactory/api/go/go-golang" -t docker-dev-artifactory.workday.com/dpm/redisshake:${BUILD_ID} .'
+                sh 'docker build --build-arg goproxy="https://${USERPASS}@artifactory.workday.com/artifactory/api/go/go" -t docker-dev-artifactory.workday.com/dpm/redisshake:${BUILD_ID} .'
             }
         }
       }
