@@ -5,15 +5,8 @@ FROM docker-dev-artifactory.workday.com/dpm/golang:1.14-alpine-gcc
 COPY . .
 ARG goproxy=""
 ENV GOPROXY=$goproxy
-ENV https_proxy=$goproxy
 
-RUN git config http.proxy "$goproxy" && \
-    go get -u github.com/kardianos/govendor && \
-    cd src/vendor && \
-    govendor sync && \
-    cd ../..
-    
-RUN ./fastbuild.sh
+RUN ./build.sh
 
 FROM docker-dev-artifactory.workday.com/dpm/centos:7.7.1908
 
