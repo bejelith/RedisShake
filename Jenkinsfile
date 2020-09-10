@@ -26,7 +26,7 @@ pipeline {
 
       stage('Build') {
         environment {
-          BUILD_ID = VersionNumber([versionNumberString : '${BUILD_YEAR}.${BUILD_MONTH}.${BUILD_DAY}.' + env.CHANGE_ID + '.' + env.BUILD_NUMBER])
+          BUILD_ID = VersionNumber([versionNumberString : '${BUILD_YEAR}.${BUILD_MONTH}.${BUILD_DAY}.' + env.BUILD_NUMBER])
           IMAGE = "docker-dev-artifactory.workday.com/dpm/redisshake:$env.BUILD_ID"
         }
         steps {
