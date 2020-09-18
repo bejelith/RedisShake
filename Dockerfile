@@ -8,7 +8,7 @@ ENV GOPROXY=$goproxy
 
 RUN ./build.sh
 
-FROM docker-dev-artifactory.workday.com/dpm/centos:7.7.1908
+FROM docker-dev-artifactory.workday.com/dpm/golang:1.14-alpine
 
 COPY --from=0 /go/bin/redis-shake.linux /usr/local/app/redis-shake
 COPY --from=0 /go/wdconfig.conf /usr/local/app/redis-shake.conf
