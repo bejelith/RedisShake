@@ -9,8 +9,9 @@ type Status struct {
 	keys           atomic2.Int64 // total key number (nentry)
 	fullSyncFilter atomic2.Int64 // filtered keys in full sync (ignore)
 	incrSyncFilter atomic2.Int64 // filtered keys in increase sync (nbypass)
-	targetOffset   atomic2.Int64 // Target sourceOffset
-	sourceOffset   int64         // Source sourceOffset
+	targetOffset   atomic2.Int64 // target offset
+	sourceOffset   int64         // source offset
+	targetTimeSpent atomic2.Int64
 }
 
 func (s *Status) Stat() *syncerStat {
