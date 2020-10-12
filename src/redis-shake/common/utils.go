@@ -38,7 +38,7 @@ func OpenRedisConn(target []string, authType, passwd string, isCluster bool, tls
 func OpenRedisConnWithTimeout(target []string, authType, passwd string, readTimeout, writeTimeout time.Duration,
 	isCluster bool, tlsEnable bool) redigo.Conn {
 	// return redigo.NewConn(OpenNetConn(target, authType, passwd), readTimeout, writeTimeout)
-	if isCluster {
+		if isCluster {
 		// the alive time isn't the tcp keep_alive parameter
 		cluster, err := redigoCluster.NewCluster(
 			&redigoCluster.Options{
