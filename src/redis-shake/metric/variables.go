@@ -27,6 +27,7 @@ type MetricRest struct {
 	SenderBufCount       interface{} // length of sender buffer
 	ProcessingCmdCount   interface{} // length of delay channel
 	TargetDBOffset       interface{} // target redis offset
+	TargetTimeSpent      interface{}
 	SourceDBOffset       interface{} // source redis offset
 	SourceAddress        interface{}
 	TargetAddress        interface{}
@@ -72,6 +73,7 @@ func NewMetricRest() []MetricRest {
 			AvgDelay:             fmt.Sprintf("%s ms", singleMetric.GetAvgDelay()),
 			NetworkSpeed:         singleMetric.GetNetworkFlow(),
 			NetworkFlowTotal:     singleMetric.GetNetworkFlowTotal(),
+			TargetTimeSpent:      singleMetric.TargetTimeSpent.Get(),
 			FullSyncProgress:     singleMetric.GetFullSyncProgress(),
 			Status:               base.Status,
 			SenderBufCount:       detailMap["SenderBufCount"],

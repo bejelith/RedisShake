@@ -3,6 +3,7 @@ package metric
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/alibaba/RedisShake/pkg/libs/atomic2"
 	"math"
 	"strconv"
 	"sync"
@@ -91,6 +92,7 @@ type Metric struct {
 	NetworkFlow Combine // +speed
 
 	FullSyncProgress uint64
+	TargetTimeSpent atomic2.Int64
 }
 
 func CreateMetric(r base.Runner) {
