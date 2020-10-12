@@ -11,6 +11,7 @@ type Status struct {
 	incrSyncFilter atomic2.Int64 // filtered keys in increase sync (nbypass)
 	targetOffset   atomic2.Int64 // target offset
 	sourceOffset   int64         // source offset
+	targetTimeSpent atomic2.Int64
 }
 
 func (s *Status) Stat() *syncerStat {

@@ -2,6 +2,7 @@ package dbSync
 
 import (
 	"bufio"
+	"github.com/alibaba/RedisShake/pkg/libs/stats"
 	"github.com/alibaba/RedisShake/redis-shake/configure"
 	"github.com/alibaba/RedisShake/redis-shake/common"
 	"github.com/alibaba/RedisShake/pkg/libs/atomic2"
@@ -346,11 +347,13 @@ func (ds *DbSyncer) sendTargetCommand(c redigo.Conn) {
 					ds.id, conf.Options.Id, err.Error())
 			}
 		}
-
+		timer:= stats.NewTimer()
 		if err := c.Flush(); err != nil {
 			log.Panicf("DbSyncer[%d] Event:FlushFail\tId:%s\tError:%s\t",
 				ds.id, conf.Options.Id, err.Error())
 		}
+		// Report flush time divided batch size
+		ds.stat.targetTimeSpent.Add(int64(timer.Stop())/int64(length))
 
 		// clear
 		cachedTunnel = cachedTunnel[:0]
