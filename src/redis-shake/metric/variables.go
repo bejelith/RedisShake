@@ -76,7 +76,6 @@ func NewMetricRest() []MetricRest {
 			NetworkSpeed:         singleMetric.GetNetworkFlow(),
 			NetworkFlowTotal:     singleMetric.GetNetworkFlowTotal(),
 			TargetTimeSpent:      singleMetric.TargetTimeSpent.Get(),
-			SourceLatency:        singleMetric.SourceLatency.Get(),
 			FullSyncProgress:     singleMetric.GetFullSyncProgress(),
 			RetryCount:           singleMetric.RetryCounter,
 			Status:               base.Status,

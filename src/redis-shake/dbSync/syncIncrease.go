@@ -369,7 +369,7 @@ func (ds *DbSyncer) sendTargetCommand(c redigo.Conn) {
 		}
 
 		// Report flush time divided batch size
-		ds.stat.targetTimeSpent.Add(int64(timer.Stop())/int64(length))
+		metric.GetMetric(ds.id).TargetTimeSpent.Add(int64(timer.Stop())/int64(length))
 
 		// clear
 		cachedTunnel = cachedTunnel[:0]
