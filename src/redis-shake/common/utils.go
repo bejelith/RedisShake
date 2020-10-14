@@ -38,7 +38,7 @@ func OpenRedisConn(target []string, authType, passwd string, isCluster bool, tls
 func OpenRedisConnWithTimeout(target []string, authType, passwd string, readTimeout, writeTimeout time.Duration,
 	isCluster bool, tlsEnable bool) (redigo.Conn, error) {
 	// return redigo.NewConn(OpenNetConn(target, authType, passwd), readTimeout, writeTimeout)
-		if isCluster {
+	if isCluster {
 		// the alive time isn't the tcp keep_alive parameter
 		cluster, err := redigoCluster.NewCluster(
 			&redigoCluster.Options{
@@ -876,6 +876,12 @@ RESTORE:
 				log.Warnf("target key name is busy but ignore: %v", string(e.Key))
 			case "none":
 				return errors.Errorf("target key name is busy: %v", string(e.Key))
+			}
+		} else if strings.Contains(err.Error(), "Bad data format") {
+			// from big version to small version may has this error. we need to split the data struct
+			log.Warnf("return error[%v], ignore it and try to split the value", err)
+			if err := restoreBigRdbEntry(c, e); err != nil {
+				log.Panic(err)
 			}
 		} else {
 			return errors.Errorf("restore command error key:", string(e.Key), " err: ", err)
