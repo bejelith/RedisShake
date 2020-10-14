@@ -138,7 +138,7 @@ func (ds *DbSyncer) pSyncPipeCopy(c net.Conn, br *bufio.Reader, bw *bufio.Writer
 	var nread atomic2.Int64
 	go func() {
 		defer c.Close()
-		for range time.NewTicker(1 * time.Second).C {
+		for range time.NewTicker(time.Second).C {
 			select {
 			case <-ds.WaitFull:
 				if err := utils.SendPSyncAck(bw, offset+nread.Get()); err != nil {
