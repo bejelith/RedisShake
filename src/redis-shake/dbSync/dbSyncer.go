@@ -9,6 +9,8 @@ import (
 	"github.com/alibaba/RedisShake/redis-shake/metric"
 	"golang.org/x/sync/semaphore"
 	"io"
+	"strings"
+	"time"
 
 	"github.com/alibaba/RedisShake/redis-shake/checkpoint"
 	"github.com/alibaba/RedisShake/redis-shake/configure"
@@ -30,8 +32,8 @@ func NewDbSyncer(id int, source, sourcePassword string, target []string, targetP
 		checkpointName:             utils.CheckpointKey, // default, may be modified
 		WaitFull:                   make(chan struct{}),
 		Restart:                    make(chan struct{}),
-		MaxFullSyncs:               maxFullsyncs,
-		FullSyncRetries:            0,
+		MaxParallelFullSyncs:       maxFullsyncs,
+		fullSyncRetryCounter:       0,
 	}
 
 	// add metric
@@ -66,12 +68,13 @@ type DbSyncer struct {
 	 */
 	delayChannel chan *delayNode
 
-	fullSyncOffset int64          // full sync offset value
-	sendBuf        chan cmdDetail // sending queue
-	WaitFull       chan struct{}  // wait full sync done
-	Restart        chan struct{}
-	MaxFullSyncs   *semaphore.Weighted
-	FullSyncRetries int
+	fullSyncOffset       int64          // full sync offset value
+	sendBuf              chan cmdDetail // sending queue
+	WaitFull             chan struct{}  // wait full sync done
+	Restart              chan struct{}
+	MaxParallelFullSyncs *semaphore.Weighted
+	fullSyncRetryCounter int
+	lastRetry            time.Time
 }
 
 func (ds *DbSyncer) GetExtraInfo() map[string]interface{} {
@@ -85,13 +88,20 @@ func (ds *DbSyncer) GetExtraInfo() map[string]interface{} {
 	}
 }
 
-func (ds *DbSyncer) WaitFullSync() {
-	<-ds.WaitFull
+func (ds *DbSyncer) incrementRetryCounter() {
+	if time.Now().After(ds.lastRetry.Add(time.Hour)){
+		ds.fullSyncRetryCounter = 0
+	}
+	ds.lastRetry = time.Now()
+	if ds.fullSyncRetryCounter > 3{
+		log.Panicf("DbSyncer[%d] max amount of failures reached for %s", ds.id, strings.Join(ds.target,","))
+	}
 }
 
 // main
 func (ds *DbSyncer) Sync() {
-	ds.FullSyncRetries++
+	ds.incrementRetryCounter()
+
 	log.Infof("DbSyncer[%d] starts syncing data from %v to %v with http[%v], enableResumeFromBreakPoint[%v], "+
 		"slot boundary[%v, %v]", ds.id, ds.source, ds.target, ds.httpProfilePort, ds.enableResumeFromBreakPoint,
 		ds.slotLeftBoundary, ds.slotRightBoundary)
@@ -120,7 +130,7 @@ func (ds *DbSyncer) Sync() {
 	var nsize int64
 	var isFullSync bool
 
-	ds.MaxFullSyncs.Acquire(context.TODO(), 1)
+	ds.MaxParallelFullSyncs.Acquire(context.TODO(), 1)
 	if conf.Options.Psync {
 		input, nsize, isFullSync, runId = ds.sendPSyncCmd(ds.source, conf.Options.SourceAuthType, ds.sourcePassword,
 			conf.Options.SourceTLSEnable, runId, offset)
@@ -144,7 +154,7 @@ func (ds *DbSyncer) Sync() {
 		err := ds.syncRDBFile(reader, ds.target, conf.Options.TargetAuthType, ds.targetPassword, nsize, conf.Options.TargetTLSEnable)
 		if err != nil {
 			log.Errorf("Restarting DbSyncer[%d] for: %v", ds.id, err)
-			ds.MaxFullSyncs.Release(1)
+			ds.MaxParallelFullSyncs.Release(1)
 			go ds.Sync()
 			return
 		}
@@ -155,7 +165,7 @@ func (ds *DbSyncer) Sync() {
 	// set fullSyncProgress to 100 when skip full sync stage
 	metric.GetMetric(ds.id).SetFullSyncProgress(ds.id, 100)
 
-	ds.MaxFullSyncs.Release(1)
+	ds.MaxParallelFullSyncs.Release(1)
 
 	// sync increment
 	base.Status = "incr"
