@@ -2,22 +2,23 @@ package dbSync
 
 import (
 	"bufio"
-	"github.com/alibaba/RedisShake/redis-shake/common"
-	"github.com/alibaba/RedisShake/redis-shake/base"
-	"sync"
-	"github.com/alibaba/RedisShake/redis-shake/configure"
-	"github.com/alibaba/RedisShake/redis-shake/filter"
-	"github.com/alibaba/RedisShake/pkg/libs/log"
-	"time"
 	"bytes"
 	"fmt"
+	"github.com/alibaba/RedisShake/pkg/libs/log"
+	"github.com/alibaba/RedisShake/redis-shake/base"
+	"github.com/alibaba/RedisShake/redis-shake/common"
+	"github.com/alibaba/RedisShake/redis-shake/configure"
+	"github.com/alibaba/RedisShake/redis-shake/filter"
+	"sync"
+	"time"
 
 	"github.com/alibaba/RedisShake/redis-shake/metric"
 )
 
-func (ds *DbSyncer) syncRDBFile(reader *bufio.Reader, target []string, authType, passwd string, nsize int64, tlsEnable bool) {
+func (ds *DbSyncer) syncRDBFile(reader *bufio.Reader, target []string, authType, passwd string, nsize int64, tlsEnable bool) error {
 	pipe := utils.NewRDBLoader(reader, &ds.stat.rBytes, base.RDBPipeSize)
 	wait := make(chan struct{})
+	child_errors := make([]error, conf.Options.Parallel)
 	go func() {
 		defer close(wait)
 		var wg sync.WaitGroup
@@ -65,7 +66,11 @@ func (ds *DbSyncer) syncRDBFile(reader *bufio.Reader, target []string, authType,
 
 						log.Debugf("DbSyncer[%d] start restoring key[%s] with value length[%v]", ds.id, e.Key, len(e.Value))
 
-						utils.RestoreRdbEntry(c, e)
+						if err := utils.RestoreRdbEntry(c, e); err != nil {
+							child_errors[i] = err
+							log.Errorf("DbSyncer[%d] restore of key[%s] failed: %v", ds.id, e.Key, err)
+							return
+						}
 						log.Debugf("DbSyncer[%d] restore key[%s] ok", ds.id, e.Key)
 					}
 				}
@@ -96,4 +101,10 @@ func (ds *DbSyncer) syncRDBFile(reader *bufio.Reader, target []string, authType,
 		metric.GetMetric(ds.id).SetFullSyncProgress(ds.id, uint64(100*stat.rBytes/nsize))
 	}
 	log.Infof("DbSyncer[%d] sync rdb done", ds.id)
+	for _, err := range child_errors {
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }

@@ -763,7 +763,7 @@ func restoreBigRdbEntry(c redigo.Conn, e *rdb.BinEntry) error {
 	return err
 }
 
-func RestoreRdbEntry(c redigo.Conn, e *rdb.BinEntry) {
+func RestoreRdbEntry(c redigo.Conn, e *rdb.BinEntry) error {
 	/*
 	 * for ucloud, special judge.
 	 * 046110.key -> key
@@ -804,7 +804,7 @@ func RestoreRdbEntry(c redigo.Conn, e *rdb.BinEntry) {
 			case "ignore":
 				log.Warnf("target key name is busy but ignore: %v", string(e.Key))
 			case "none":
-				log.Panicf("target key name is busy: %v", string(e.Key))
+				return errors.Errorf("target key name is busy: %v", string(e.Key))
 			}
 		}
 		restoreQuicklistEntry(c, e)
@@ -814,18 +814,16 @@ func RestoreRdbEntry(c redigo.Conn, e *rdb.BinEntry) {
 				log.Panicf("expire ", string(e.Key), err)
 			}
 		}
-		return
+		return nil
 	}
 
 	// load lua script
 	if e.Type == rdb.RdbFlagAUX && string(e.Key) == "lua" {
 		if conf.Options.FilterLua == false {
 			_, err := c.Do("script", "load", e.Value)
-			if err != nil {
-				log.Panicf(err.Error())
-			}
+			return err
 		}
-		return
+		return nil
 	}
 
 	// TODO, need to judge big key
@@ -850,10 +848,10 @@ func RestoreRdbEntry(c redigo.Conn, e *rdb.BinEntry) {
 		if e.ExpireAt != 0 {
 			r, err := Int64(c.Do("pexpire", e.Key, ttlms))
 			if err != nil && r != 1 {
-				log.Panicf("expire ", string(e.Key), err)
+				return errors.Errorf("expire ", string(e.Key), err)
 			}
 		}
-		return
+		return nil
 	}
 
 	params := []interface{}{e.Key, ttlms, e.Value}
@@ -888,29 +886,22 @@ RESTORE:
 					params = append(params, "REPLACE")
 				} else {
 					_, err = redigoCluster.Int(c.Do("del", e.Key))
-					if err != nil {
-						log.Panicf("delete key[%v] failed[%v]", string(e.Key), err)
-					}
+					return err
 				}
 
 				goto RESTORE
 			case "ignore":
 				log.Warnf("target key name is busy but ignore: %v", string(e.Key))
-				case "none":
-				log.Panicf("target key name is busy: %v", string(e.Key))
-			}
-		} else if strings.Contains(err.Error(), "Bad data format") {
-			// from big version to small version may has this error. we need to split the data struct
-			log.Warnf("return error[%v], ignore it and try to split the value", err)
-			if err := restoreBigRdbEntry(c, e); err != nil {
-				log.Panic(err)
+			case "none":
+				return errors.Errorf("target key name is busy: %v", string(e.Key))
 			}
 		} else {
-			log.PanicError(err, "restore command error key:", string(e.Key), " err:", err.Error())
+			return errors.Errorf("restore command error key:", string(e.Key), " err: ", err)
 		}
 	} else if s != "OK" {
-		log.Panicf("restore command response = '%s', should be 'OK'", s)
+		return errors.Errorf("restore command response = '%s', should be 'OK'", s)
 	}
+	return nil
 }
 
 func Iocopy(r io.Reader, w io.Writer, p []byte, max int) int {
