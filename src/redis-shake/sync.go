@@ -4,7 +4,7 @@
 package run
 
 import (
-	"sync"
+	"golang.org/x/sync/semaphore"
 
 	"github.com/alibaba/RedisShake/pkg/libs/log"
 
@@ -80,33 +80,22 @@ func (cmd *CmdSync) Main() {
 		syncChan <- nd
 	}
 
-	var wg sync.WaitGroup
-	wg.Add(len(conf.Options.SourceAddressList))
+	//var wg sync.WaitGroup
+	//wg.Add(len(conf.Options.SourceAddressList))
+	maxFullsyncs := semaphore.NewWeighted(int64(conf.Options.SourceRdbParallel))
+	for {
+		nd, ok := <-syncChan
+		if !ok {
+			break
+		}
 
-	for i := 0; i < int(conf.Options.SourceRdbParallel); i++ {
-		go func() {
-			for {
-				nd, ok := <-syncChan
-				if !ok {
-					break
-				}
-
-				// one sync link corresponding to one DbSyncer
-				ds := dbSync.NewDbSyncer(nd.id, nd.source, nd.sourcePassword, nd.target, nd.targetPassword,
-					nd.slotLeftBoundary, nd.slotRightBoundary, conf.Options.HttpProfile+i)
-				cmd.dbSyncers[nd.id] = ds
-				// run in routine
-				go ds.Sync()
-
-				// wait full sync done
-				<-ds.WaitFull
-
-				wg.Done()
-			}
-		}()
+		// one sync link corresponding to one DbSyncer
+		ds := dbSync.NewDbSyncer(nd.id, nd.source, nd.sourcePassword, nd.target, nd.targetPassword,
+			nd.slotLeftBoundary, nd.slotRightBoundary, conf.Options.HttpProfile+nd.id, maxFullsyncs)
+		cmd.dbSyncers[nd.id] = ds
+		// run in routine
+		go ds.Sync()
 	}
-
-	wg.Wait()
 	close(syncChan)
 
 	// never quit because increment syncing is always running
