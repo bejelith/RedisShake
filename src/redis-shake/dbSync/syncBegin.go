@@ -1,15 +1,16 @@
 package dbSync
 
 import (
-	"net"
-	"github.com/alibaba/RedisShake/redis-shake/common"
-	"github.com/alibaba/RedisShake/pkg/libs/log"
-	"time"
-	"github.com/alibaba/RedisShake/pkg/libs/io/pipe"
 	"bufio"
-	"github.com/alibaba/RedisShake/redis-shake/base"
-	"io"
 	"github.com/alibaba/RedisShake/pkg/libs/atomic2"
+	"github.com/alibaba/RedisShake/pkg/libs/io/pipe"
+	"github.com/alibaba/RedisShake/pkg/libs/log"
+	"github.com/alibaba/RedisShake/redis-shake/base"
+	"github.com/alibaba/RedisShake/redis-shake/common"
+	"github.com/pkg/errors"
+	"io"
+	"net"
+	"time"
 
 	"github.com/alibaba/RedisShake/redis-shake/configure"
 )
@@ -32,8 +33,8 @@ func (ds *DbSyncer) sendSyncCmd(master, authType, passwd string, tlsEnable bool)
 	}
 }
 
-func (ds *DbSyncer) sendPSyncCmd(master, authType, passwd string, tlsEnable bool, runId string,
-		prevOffset int64) (pipe.Reader, int64, bool, string) {
+// This function actually doesnt not send Psync command, the command is sent by "SendPSyncContinue" (whatever it means)
+func (ds *DbSyncer) sendPSyncCmd(master, authType, passwd string, tlsEnable bool, runId string ) (pipe.Reader, int64, bool, string, error) {
 	c := utils.OpenNetConn(master, authType, passwd, tlsEnable)
 	log.Infof("DbSyncer[%d] psync connect '%v' with auth type[%v] OK!", ds.id, master, authType)
 
@@ -45,18 +46,21 @@ func (ds *DbSyncer) sendPSyncCmd(master, authType, passwd string, tlsEnable bool
 	// writer buffer bind to client
 	bw := bufio.NewWriterSize(c, utils.WriterBufferSize)
 
-	log.Infof("DbSyncer[%d] try to send 'psync' command: run-id[%v], offset[%v]", ds.id, runId, prevOffset)
+	log.Infof("DbSyncer[%d] try to send 'psync' command: run-id[%v], offset[%v]", ds.id, runId, ds.fullSyncOffset)
 	// send psync command and decode the result
-	runid, offset, wait := utils.SendPSyncContinue(br, bw, runId, prevOffset)
-	ds.stat.targetOffset.Set(offset)
-	ds.fullSyncOffset = offset // store the full sync offset
+	runid, offset, wait, err := utils.SendPSyncContinue(br, bw, runId, ds.fullSyncOffset)
+	if err != nil {
+		return nil, 0, false, runid, errors.Errorf("DbSyncer[%d] error sending PSYNC: %v", err)
+	}
+	ds.fullSyncOffset = offset
+	ds.stat.targetOffset.Set(ds.fullSyncOffset)
 
 	piper, pipew := pipe.NewSize(utils.ReaderBufferSize)
 	if wait == nil {
 		// continue
 		log.Infof("DbSyncer[%d] psync runid = %s, offset = %d, psync continue", ds.id, runId, offset)
 		go ds.runIncrementalSync(c, br, bw, 0, runid, offset, master, authType, passwd, tlsEnable, pipew, true)
-		return piper, 0, false, runid
+		return piper, 0, false, runid, nil
 	} else {
 		// fullresync
 		log.Infof("DbSyncer[%d] psync runid = %s, offset = %d, fullsync", ds.id, runid, offset)
@@ -66,25 +70,23 @@ func (ds *DbSyncer) sendPSyncCmd(master, authType, passwd string, tlsEnable bool
 		for nsize == 0 {
 			select {
 			case nsize = <-wait:
-				if nsize == 0 {
-					log.Infof("DbSyncer[%d] +", ds.id)
-				}
 			case <-time.After(time.Second):
-				log.Infof("DbSyncer[%d] -", ds.id)
 			}
+			log.Infof("DbSyncer[%d] Waiting fullsync to finish", ds.id)
 		}
 
 		go ds.runIncrementalSync(c, br, bw, int(nsize), runid, offset, master, authType, passwd, tlsEnable, pipew, true)
-		return piper, nsize, true, runid
+		return piper, nsize, true, runid, nil
 	}
 }
 
 func (ds *DbSyncer) runIncrementalSync(c net.Conn, br *bufio.Reader, bw *bufio.Writer, rdbSize int, runId string,
-		offset int64, master, authType, passwd string, tlsEnable bool, pipew pipe.Writer,
-		isFullSync bool) {
+	offset int64, master, authType, passwd string, tlsEnable bool, pipew pipe.Writer,
+	isFullSync bool) {
 	// write -> pipew -> piper -> read
 	defer pipew.Close()
-	if isFullSync {
+	if isFullSync { //always true -.-
+		log.Info("DbSyncer[%d] RDB size %d", ds.id, rdbSize)
 		p := make([]byte, 8192)
 		// read rdb in for loop
 		for ; rdbSize != 0; {
@@ -100,8 +102,9 @@ func (ds *DbSyncer) runIncrementalSync(c net.Conn, br *bufio.Reader, bw *bufio.W
 		 */
 		n, err := ds.pSyncPipeCopy(c, br, bw, offset, pipew)
 		if err != nil {
-			log.PanicErrorf(err, "DbSyncer[%d] psync runid = %s, offset = %d, pipe is broken",
-				ds.id, runId, offset)
+			// Do not exists c (Connection) will be rebuild later in the loop
+			log.Errorf("DbSyncer[%d] psync runid = %s, offset = %d, pipe is broken",
+				ds.id, runId, offset, err)
 		}
 		// the 'c' is closed every loop
 
@@ -115,22 +118,26 @@ func (ds *DbSyncer) runIncrementalSync(c net.Conn, br *bufio.Reader, bw *bufio.W
 			time.Sleep(time.Second)
 			c = utils.OpenNetConnSoft(master, authType, passwd, tlsEnable)
 			if c != nil {
-				// log.PurePrintf("%s\n", NewLogItem("SourceConnReopenSuccess", "INFO", LogDetail{Info: strconv.FormatInt(offset, 10)}))
 				log.Infof("DbSyncer[%d] Event:SourceConnReopenSuccess\tId: %s\toffset = %d",
 					ds.id, conf.Options.Id, offset)
 				// ds.SyncStat.SetStatus("incr")
 				base.Status = "incr"
+				utils.AuthPassword(c, authType, passwd)
+				utils.SendPSyncListeningPort(c, conf.Options.HttpProfile)
+				br = bufio.NewReaderSize(c, utils.ReaderBufferSize)
+				bw = bufio.NewWriterSize(c, utils.WriterBufferSize)
+				_, _, _, err = utils.SendPSyncContinue(br, bw, runId, offset)
+				if err != nil {
+					// If PSYNC fails we need skip PipeCopy but retry to restanblish connection to the source
+					log.Errorf("DbSyncer[%d] retrying incremental sync as was error found %d", err)
+				}
+				time.Sleep(30 * time.Second)
 				break
 			} else {
-				// log.PurePrintf("%s\n", NewLogItem("SourceConnReopenFail", "WARN", NewErrorLogDetail("", "")))
 				log.Errorf("DbSyncer[%d] Event:SourceConnReopenFail\tId: %s", ds.id, conf.Options.Id)
 			}
 		}
-		utils.AuthPassword(c, authType, passwd)
-		utils.SendPSyncListeningPort(c, conf.Options.HttpProfile)
-		br = bufio.NewReaderSize(c, utils.ReaderBufferSize)
-		bw = bufio.NewWriterSize(c, utils.WriterBufferSize)
-		utils.SendPSyncContinue(br, bw, runId, offset)
+
 	}
 }
 
@@ -158,7 +165,7 @@ func (ds *DbSyncer) pSyncPipeCopy(c net.Conn, br *bufio.Reader, bw *bufio.Writer
 	for {
 		n, err := br.Read(p)
 		if err != nil {
-			return nread.Get(), nil
+			return nread.Get(), err
 		}
 		if _, err := copyto.Write(p[:n]); err != nil {
 			return nread.Get(), err
