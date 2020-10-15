@@ -3,12 +3,12 @@ package dbSync
 import (
 	"bufio"
 	"fmt"
-	"github.com/alibaba/RedisShake/pkg/libs/stats"
-	"github.com/alibaba/RedisShake/redis-shake/configure"
-	"github.com/alibaba/RedisShake/redis-shake/common"
 	"github.com/alibaba/RedisShake/pkg/libs/atomic2"
 	"github.com/alibaba/RedisShake/pkg/libs/log"
+	"github.com/alibaba/RedisShake/pkg/libs/stats"
 	"github.com/alibaba/RedisShake/pkg/redis"
+	"github.com/alibaba/RedisShake/redis-shake/common"
+	"github.com/alibaba/RedisShake/redis-shake/configure"
 	"github.com/alibaba/RedisShake/redis-shake/dbSync/latencymonitor"
 	"github.com/alibaba/RedisShake/redis-shake/filter"
 	"io"
@@ -362,14 +362,14 @@ func (ds *DbSyncer) sendTargetCommand(c redigo.Conn) {
 			}
 		}
 		timer := stats.NewTimer()
-
 		if err := c.Flush(); err != nil {
 			log.Panicf("DbSyncer[%d] Event:FlushFail\tId:%s\tError:%s\t",
 				ds.id, conf.Options.Id, err.Error())
 		}
-
+		//Update lastCommittedOffset with the last offset of a successful batch
+		ds.lastCommittedOffset = offset
 		// Report flush time divided batch size
-		metric.GetMetric(ds.id).TargetTimeSpent.Add(int64(timer.Stop())/int64(length))
+		metric.GetMetric(ds.id).TargetTimeSpent.Add(int64(timer.Stop()) / int64(length))
 
 		// clear
 		cachedTunnel = cachedTunnel[:0]

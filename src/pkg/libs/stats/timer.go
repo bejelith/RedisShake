@@ -14,7 +14,9 @@ type TimerContext struct {
 }
 
 func (t *TimerContext) Stop() time.Duration {
-	t.elapsed = time.Now().Sub(t.start)
+	if t.elapsed == 0 {
+		t.elapsed = time.Now().Sub(t.start)
+	}
 	return t.elapsed
 }
 
