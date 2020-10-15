@@ -32,6 +32,7 @@ type MetricRest struct {
 	SourceAddress        interface{}
 	TargetAddress        interface{}
 	Details              interface{} // other details info
+	RetryCount           interface{}
 }
 
 func NewMetricRest() []MetricRest {
@@ -75,6 +76,7 @@ func NewMetricRest() []MetricRest {
 			NetworkFlowTotal:     singleMetric.GetNetworkFlowTotal(),
 			TargetTimeSpent:      singleMetric.TargetTimeSpent.Get(),
 			FullSyncProgress:     singleMetric.GetFullSyncProgress(),
+			RetryCount:           singleMetric.RetryCounter,
 			Status:               base.Status,
 			SenderBufCount:       detailMap["SenderBufCount"],
 			ProcessingCmdCount:   detailMap["ProcessingCmdCount"],

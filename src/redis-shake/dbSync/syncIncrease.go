@@ -2,20 +2,19 @@ package dbSync
 
 import (
 	"bufio"
-	"github.com/alibaba/RedisShake/pkg/libs/stats"
-	"github.com/alibaba/RedisShake/redis-shake/configure"
-	"github.com/alibaba/RedisShake/redis-shake/common"
+	"fmt"
 	"github.com/alibaba/RedisShake/pkg/libs/atomic2"
 	"github.com/alibaba/RedisShake/pkg/libs/log"
-	"time"
+	"github.com/alibaba/RedisShake/pkg/libs/stats"
 	"github.com/alibaba/RedisShake/pkg/redis"
-	"strings"
-	"strconv"
+	"github.com/alibaba/RedisShake/redis-shake/common"
+	"github.com/alibaba/RedisShake/redis-shake/configure"
 	"github.com/alibaba/RedisShake/redis-shake/filter"
-	"bytes"
-	"fmt"
 	"io"
 	"net"
+	"strconv"
+	"strings"
+	"time"
 
 	"github.com/alibaba/RedisShake/redis-shake/metric"
 
@@ -43,18 +42,19 @@ func (ds *DbSyncer) syncCommand(reader *bufio.Reader, target []string, authType,
 	// do send to target
 	go ds.sendTargetCommand(c)
 
-	// print stat
-	for lStat := ds.stat.Stat(); ; {
-		time.Sleep(time.Second)
-		nStat := ds.stat.Stat()
-		var b bytes.Buffer
-		fmt.Fprintf(&b, "DbSyncer[%d] sync: ", ds.id)
-		fmt.Fprintf(&b, " +forwardCommands=%-6d", nStat.wCommands - lStat.wCommands)
-		fmt.Fprintf(&b, " +filterCommands=%-6d", nStat.incrSyncFilter - lStat.incrSyncFilter)
-		fmt.Fprintf(&b, " +writeBytes=%d", nStat.wBytes - lStat.wBytes)
-		log.Info(b.String())
-		lStat = nStat
-	}
+	select {}
+	// useless logging
+	//for lStat := ds.stat.Stat(); ; {
+	//	time.Sleep(time.Second)
+	//	nStat := ds.stat.Stat()
+	//	var b bytes.Buffer
+	//	fmt.Fprintf(&b, "DbSyncer[%d] sync: ", ds.id)
+	//	fmt.Fprintf(&b, " +forwardCommands=%-6d", nStat.wCommands - lStat.wCommands)
+	//	fmt.Fprintf(&b, " +filterCommands=%-6d", nStat.incrSyncFilter - lStat.incrSyncFilter)
+	//	fmt.Fprintf(&b, " +writeBytes=%d", nStat.wBytes - lStat.wBytes)
+	//	log.Info(b.String())
+	//	lStat = nStat
+	//}
 }
 
 func (ds *DbSyncer) fetchOffset() {
