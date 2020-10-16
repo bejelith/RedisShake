@@ -30,7 +30,8 @@ func (ds *DbSyncer) syncCommand(reader *bufio.Reader, target []string, authType,
 	ds.sendBuf = make(chan cmdDetail, conf.Options.SenderCount)
 	ds.delayChannel = make(chan *delayNode, conf.Options.SenderDelayChannelSize)
 
-	// fetch source redis offset
+	// fetch source redis sourceOffset
+	// keeps track of offsets for reporting purposes ... the more the better -.-
 	go ds.fetchOffset()
 
 	// receiver target reply
@@ -82,7 +83,7 @@ func (ds *DbSyncer) fetchOffset() {
 					ds.sourcePassword, incrSyncReadeTimeout, incrSyncReadeTimeout, false, conf.Options.SourceTLSEnable)
 			}
 		} else {
-			// ds.SyncStat.SetOffset(offset)
+			// ds.SyncStat.SetOffset(sourceOffset)
 			if ds.stat.sourceOffset, err = strconv.ParseInt(offset, 10, 64); err != nil {
 				log.Errorf("DbSyncer[%d] Event:GetFakeSlaveOffsetFail\tId:%s\tError:%s",
 					ds.id, conf.Options.Id, err.Error())
@@ -149,9 +150,9 @@ func (ds *DbSyncer) receiveTargetReply(c redigo.Conn) {
 
 func (ds *DbSyncer) parseSourceCommand(reader *bufio.Reader) {
 	var (
-		lastDb              = -1
-		bypass              = false
-		isSelect            = false
+		lastDb        = -1
+		bypass        = false
+		isSelect      = false
 		sCmd          string
 		argv, newArgv [][]byte
 		err           error
@@ -166,7 +167,7 @@ func (ds *DbSyncer) parseSourceCommand(reader *bufio.Reader) {
 		ds.sendBuf <- cmdDetail{
 			Cmd:    "select",
 			Args:   []interface{}{utils.String2Bytes(dbS)},
-			Offset: ds.fullSyncOffset,
+			Offset: ds.sourceOffset,
 			Db:     ds.startDbId,
 		}
 	}
@@ -176,7 +177,7 @@ func (ds *DbSyncer) parseSourceCommand(reader *bufio.Reader) {
 	log.Infof("DbSyncer[%d] FlushEvent:IncrSyncStart\tId:%s\t", ds.id, conf.Options.Id)
 
 	for {
-		ignoresentinel:= false
+		ignoresentinel := false
 		ignoreCmd := false
 		isSelect = false
 		// incrOffset is used to do resume from break-point job
@@ -202,7 +203,7 @@ func (ds *DbSyncer) parseSourceCommand(reader *bufio.Reader) {
 					lastDb = n
 				} else if filter.FilterCommands(sCmd) {
 					ignoreCmd = true
-				} else if strings.EqualFold(sCmd, "publish") && strings.EqualFold(string(argv[0]), "__sentinel__:hello"){
+				} else if strings.EqualFold(sCmd, "publish") && strings.EqualFold(string(argv[0]), "__sentinel__:hello") {
 					ignoresentinel = true
 				}
 
@@ -231,7 +232,7 @@ func (ds *DbSyncer) parseSourceCommand(reader *bufio.Reader) {
 				ds.sendBuf <- cmdDetail{
 					Cmd:    "SELECT",
 					Args:   []interface{}{[]byte(strconv.FormatInt(int64(lastDb), 10))},
-					Offset: ds.fullSyncOffset + incrOffset,
+					Offset: ds.sourceOffset + incrOffset,
 					Db:     lastDb,
 				}
 			} else {
@@ -248,7 +249,7 @@ func (ds *DbSyncer) parseSourceCommand(reader *bufio.Reader) {
 		ds.sendBuf <- cmdDetail{
 			Cmd:    sCmd,
 			Args:   data,
-			Offset: ds.fullSyncOffset + incrOffset,
+			Offset: ds.sourceOffset + incrOffset,
 			Db:     lastDb,
 		}
 	}
@@ -264,7 +265,7 @@ func (ds *DbSyncer) sendTargetCommand(c redigo.Conn) {
 	var flushStatus int // need a barrier?
 
 	// cache the batch oplog
-	cachedTunnel := make([]cmdDetail, 0, conf.Options.SenderCount + 1)
+	cachedTunnel := make([]cmdDetail, 0, conf.Options.SenderCount+1)
 	checkpointRunId := fmt.Sprintf("%s-%s", ds.source, utils.CheckpointRunId)
 	checkpointVersion := fmt.Sprintf("%s-%s", ds.source, utils.CheckpointVersion)
 	checkpointOffset := fmt.Sprintf("%s-%s", ds.source, utils.CheckpointOffset)
@@ -280,7 +281,7 @@ func (ds *DbSyncer) sendTargetCommand(c redigo.Conn) {
 			return
 		}
 
-		lastOplog := cachedTunnel[len(cachedTunnel) - 1]
+		lastOplog := cachedTunnel[len(cachedTunnel)-1]
 		needBatch := true
 		if !ds.enableResumeFromBreakPoint || (cachedCount == 1 && lastOplog.Cmd == "ping") {
 			needBatch = false
@@ -291,7 +292,7 @@ func (ds *DbSyncer) sendTargetCommand(c redigo.Conn) {
 		if needBatch {
 			ds.addSendId(&sendId, 1)
 
-			// the last offset
+			// the last sourceOffset
 			offset = lastOplog.Offset
 			if err := c.Send("multi"); err != nil {
 				log.Panicf("DbSyncer[%d] Event:SendToTargetFail\tId:%s\tError:%s\t",
@@ -347,13 +348,15 @@ func (ds *DbSyncer) sendTargetCommand(c redigo.Conn) {
 					ds.id, conf.Options.Id, err.Error())
 			}
 		}
-		timer:= stats.NewTimer()
+		timer := stats.NewTimer()
 		if err := c.Flush(); err != nil {
 			log.Panicf("DbSyncer[%d] Event:FlushFail\tId:%s\tError:%s\t",
 				ds.id, conf.Options.Id, err.Error())
 		}
+		//Update lastCommittedOffset with the last offset of a successful batch
+		ds.lastCommittedOffset = offset
 		// Report flush time divided batch size
-		metric.GetMetric(ds.id).TargetTimeSpent.Add(int64(timer.Stop())/int64(length))
+		metric.GetMetric(ds.id).TargetTimeSpent.Add(int64(timer.Stop()) / int64(length))
 
 		// clear
 		cachedTunnel = cachedTunnel[:0]

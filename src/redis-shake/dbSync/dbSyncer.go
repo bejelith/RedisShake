@@ -34,7 +34,6 @@ func NewDbSyncer(id int, source, sourcePassword string, target []string, targetP
 		Restart:                    make(chan struct{}),
 		MaxParallelFullSyncs:       maxFullsyncs,
 		fullSyncRetryCounter:       0,
-		fullSyncOffset:             -1,
 	}
 
 	// add metric
@@ -69,14 +68,14 @@ type DbSyncer struct {
 	 */
 	delayChannel chan *delayNode
 
-	fullSyncOffset       int64          // full sync offset value
 	sendBuf              chan cmdDetail // sending queue
 	WaitFull             chan struct{}  // wait full sync done
 	Restart              chan struct{}
 	MaxParallelFullSyncs *semaphore.Weighted
 	fullSyncRetryCounter int
 	lastRetry            time.Time
-	offset               int64
+	sourceOffset         int64
+	lastCommittedOffset  int64
 }
 
 func (ds *DbSyncer) GetExtraInfo() map[string]interface{} {
@@ -105,6 +104,9 @@ func (ds *DbSyncer) incrementRetryCounter() {
 // main
 func (ds *DbSyncer) Sync() {
 	ds.incrementRetryCounter()
+	//We bring back the source master offset to the last committed offset to target
+	//this is needed as we may loose the internal buffer when Sync() or child calls panic
+	ds.sourceOffset = ds.lastCommittedOffset
 
 	log.Infof("DbSyncer[%d] starts syncing data from %v to %v with http[%v], enableResumeFromBreakPoint[%v], "+
 		"slot boundary[%v, %v]", ds.id, ds.source, ds.target, ds.httpProfilePort, ds.enableResumeFromBreakPoint,
@@ -120,13 +122,13 @@ func (ds *DbSyncer) Sync() {
 
 		// checkpoint reload if has
 		log.Infof("DbSyncer[%d] enable resume from break point, try to load checkpoint", ds.id)
-		runId, ds.fullSyncOffset, dbid, err = checkpoint.LoadCheckpoint(ds.id, ds.source, ds.target, conf.Options.TargetAuthType,
+		runId, ds.sourceOffset, dbid, err = checkpoint.LoadCheckpoint(ds.id, ds.source, ds.target, conf.Options.TargetAuthType,
 			ds.targetPassword, ds.checkpointName, conf.Options.TargetType == conf.RedisTypeCluster, conf.Options.SourceTLSEnable)
 		if err != nil {
 			log.Panicf("DbSyncer[%d] load checkpoint from %v failed[%v]", ds.id, ds.target, err)
 			return
 		}
-		log.Infof("DbSyncer[%d] checkpoint info: runId[%v], offset[%v] dbid[%v]", ds.id, runId, ds.offset, dbid)
+		log.Infof("DbSyncer[%d] checkpoint info: runId[%v], sourceOffset[%v] dbid[%v]", ds.id, runId, ds.sourceOffset, dbid)
 	}
 
 	base.Status = "waitfull"
