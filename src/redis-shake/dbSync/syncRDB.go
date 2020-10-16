@@ -24,7 +24,7 @@ func (ds *DbSyncer) syncRDBFile(reader *bufio.Reader, target []string, authType,
 		var wg sync.WaitGroup
 		wg.Add(conf.Options.Parallel)
 		for i := 0; i < conf.Options.Parallel; i++ {
-			go func() {
+			go func(childId int) {
 				defer wg.Done()
 				c := utils.OpenRedisConn(target, authType, passwd, conf.Options.TargetType == conf.RedisTypeCluster,
 					tlsEnable)
@@ -67,14 +67,14 @@ func (ds *DbSyncer) syncRDBFile(reader *bufio.Reader, target []string, authType,
 						log.Debugf("DbSyncer[%d] start restoring key[%s] with value length[%v]", ds.id, e.Key, len(e.Value))
 
 						if err := utils.RestoreRdbEntry(c, e); err != nil {
-							child_errors[i] = err
+							child_errors[childId] = err
 							log.Errorf("DbSyncer[%d] restore of key[%s] failed: %v", ds.id, e.Key, err)
 							return
 						}
 						log.Debugf("DbSyncer[%d] restore key[%s] ok", ds.id, e.Key)
 					}
 				}
-			}()
+			}(i)
 		}
 
 		wg.Wait()
