@@ -195,6 +195,7 @@ func waitRdbDump(r io.Reader) <-chan int64 {
 		if err != nil || n <= 0 {
 			log.PanicErrorf(err, "invalid sync response = '%s', n = %d", rsp, n)
 		}
+		log.Info("DbSyncer[%d] Starting sync of an RDB of size %d", n)
 		size <- int64(n)
 	}()
 	return size
