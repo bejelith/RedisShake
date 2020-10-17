@@ -130,8 +130,9 @@ func (ds *DbSyncer) runIncrementalSync(c net.Conn, br *bufio.Reader, bw *bufio.W
 				if err != nil {
 					// If PSYNC fails we need skip PipeCopy but retry to re-establish connection to the source so we stay in the loop
 					log.Errorf("DbSyncer[%d] retrying incremental sync as was error found %d", err)
+					time.Sleep(30 * time.Second) //TODO maybe implement an exponential backoff
 				}
-				time.Sleep(30 * time.Second) //TODO maybe implement an exponential backoff
+
 				//Break the loop to start PipeCopy again
 				break
 			} else {
