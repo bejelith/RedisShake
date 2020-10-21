@@ -195,59 +195,36 @@ func waitRdbDump(r io.Reader) <-chan int64 {
 		if err != nil || n <= 0 {
 			log.PanicErrorf(err, "invalid sync response = '%s', n = %d", rsp, n)
 		}
+		log.Info("DbSyncer[%d] Starting sync of an RDB of size %d", n)
 		size <- int64(n)
 	}()
 	return size
 }
 
-func SendPSyncFullsync(br *bufio.Reader, bw *bufio.Writer) (string, int64, <-chan int64) {
-	cmd := redis.NewCommand("psync", "?", -1)
-	if err := redis.Encode(bw, cmd, true); err != nil {
-		log.PanicError(err, "write psync command failed, fullsync")
-	}
-	r, err := redis.Decode(br)
-	if err != nil {
-		log.PanicError(err, "invalid psync response, fullsync")
-	}
-	if e, ok := r.(*redis.Error); ok {
-		log.Panicf("invalid psync response, fullsync, %s", e.Value)
-	}
-	x, err := redis.AsString(r, nil)
-	if err != nil {
-		log.PanicError(err, "invalid psync response, fullsync")
-	}
-	xx := strings.Split(string(x), " ")
-	if len(xx) < 3 || strings.ToLower(xx[0]) != "fullresync" {
-		log.Panicf("invalid psync response = '%s', should be fullresync", x)
-	}
-	v, err := strconv.ParseInt(xx[2], 10, 64)
-	if err != nil {
-		log.PanicError(err, "parse psync offset failed")
-	}
-
-	// log.PurePrintf("%s\n", NewLogItem("FullSyncStart", "INFO", LogDetail{}))
-	log.Infof("Event:FullSyncStart\tId:%s\t", conf.Options.Id)
-	runid, offset := xx[1], v
-	return runid, offset, waitRdbDump(br)
-}
-
-func SendPSyncContinue(br *bufio.Reader, bw *bufio.Writer, runid string, offset int64) (string, int64, <-chan int64) {
+func SendPSyncContinue(br *bufio.Reader, bw *bufio.Writer, InRunid string,
+	inOffset int64) (runid string, offset int64, waitChan <-chan int64, err error) {
+	offset = inOffset
+	runid = InRunid
 	if offset != -1 {
 		offset += 1
 	}
 
-	cmd := redis.NewCommand("psync", runid, offset)
-	if err := redis.Encode(bw, cmd, true); err != nil {
-		log.PanicError(err, "write psync command failed, continue")
+
+	cmd := redis.NewCommand("psync", InRunid, offset)
+	if e := redis.Encode(bw, cmd, true); e != nil {
+		err = errors.Errorf("write psync command failed, continue", e)
+		return
 	}
-	r, err := redis.Decode(br)
-	if err != nil {
-		log.PanicError(err, "invalid psync response, continue")
+	r, e := redis.Decode(br)
+	if e != nil {
+		err = errors.Errorf( "invalid psync response, continue", e)
+		return
 	}
 
 	// parse return message
 	if e, ok := r.(*redis.Error); ok {
-		log.Panicf("invalid psync response, continue, %s", e.Value)
+		err = errors.Errorf("invalid psync response, continue, %s", e.Value)
+		return
 	}
 	x, err := redis.AsString(r, nil)
 	if err != nil {
@@ -259,23 +236,23 @@ func SendPSyncContinue(br *bufio.Reader, bw *bufio.Writer, runid string, offset 
 	if len(xx) == 1 && strings.ToLower(xx[0]) == "continue" {
 		// continue
 		log.Infof("Event:IncSyncStart\tId:%s\t", conf.Options.Id)
-		return runid, offset - 1, nil
+		return runid, offset - 1, nil, nil
 	} else if len(xx) >= 3 && strings.ToLower(xx[0]) == "fullresync" {
-		v, err := strconv.ParseInt(xx[2], 10, 64)
-		if err != nil {
-			log.PanicError(err, "parse psync offset failed")
+		v, e := strconv.ParseInt(xx[2], 10, 64)
+		if e != nil {
+			err = errors.Errorf("parse psync offset failed", e)
+			return
 		}
-
 		log.Infof("Event:FullSyncStart\tId:%s\t", conf.Options.Id)
 		runid, offset := xx[1], v
-
-		return runid, offset, waitRdbDump(br)
+		return runid, offset, waitRdbDump(br), nil
 	} else {
-		log.Panicf("invalid psync response = '%s', should be continue", x)
+		err = errors.Errorf("invalid psync response = '%s', should be continue", x)
+		return
 	}
 
 	// unreachable
-	return "", -1, nil
+	return "", -1, nil, nil
 }
 
 func SendPSyncAck(bw *bufio.Writer, offset int64) error {

@@ -68,13 +68,14 @@ type DbSyncer struct {
 	 */
 	delayChannel chan *delayNode
 
-	fullSyncOffset       int64          // full sync offset value
 	sendBuf              chan cmdDetail // sending queue
 	WaitFull             chan struct{}  // wait full sync done
 	Restart              chan struct{}
 	MaxParallelFullSyncs *semaphore.Weighted
 	fullSyncRetryCounter int
 	lastRetry            time.Time
+	sourceOffset         int64
+	lastCommittedOffset  int64
 }
 
 func (ds *DbSyncer) GetExtraInfo() map[string]interface{} {
@@ -89,25 +90,30 @@ func (ds *DbSyncer) GetExtraInfo() map[string]interface{} {
 }
 
 func (ds *DbSyncer) incrementRetryCounter() {
-	if time.Now().After(ds.lastRetry.Add(time.Hour)){
+	if time.Now().After(ds.lastRetry.Add(time.Hour)) {
 		ds.fullSyncRetryCounter = 0
 	}
 	ds.lastRetry = time.Now()
-	if ds.fullSyncRetryCounter > 3{
-		log.Panicf("DbSyncer[%d] max amount of failures reached for %s", ds.id, strings.Join(ds.target,","))
+	ds.fullSyncRetryCounter++
+	metric.GetMetric(ds.id).RetryCounter = ds.fullSyncRetryCounter
+	if ds.fullSyncRetryCounter > 3 {
+		log.Panicf("DbSyncer[%d] max amount of failures reached for %s", ds.id, strings.Join(ds.target, ","))
 	}
 }
 
 // main
 func (ds *DbSyncer) Sync() {
 	ds.incrementRetryCounter()
+	//We bring back the source master offset to the last committed offset to target
+	//this is needed as we may loose the internal buffer when Sync() or child calls panic
+	ds.sourceOffset = ds.lastCommittedOffset
 
 	log.Infof("DbSyncer[%d] starts syncing data from %v to %v with http[%v], enableResumeFromBreakPoint[%v], "+
 		"slot boundary[%v, %v]", ds.id, ds.source, ds.target, ds.httpProfilePort, ds.enableResumeFromBreakPoint,
 		ds.slotLeftBoundary, ds.slotRightBoundary)
 
 	var err error
-	runId, offset, dbid := "?", int64(-1), 0
+	runId, dbid := "?", 0
 	if ds.enableResumeFromBreakPoint {
 		// assign the checkpoint name with suffix if is cluster
 		if ds.slotLeftBoundary != -1 {
@@ -116,13 +122,13 @@ func (ds *DbSyncer) Sync() {
 
 		// checkpoint reload if has
 		log.Infof("DbSyncer[%d] enable resume from break point, try to load checkpoint", ds.id)
-		runId, offset, dbid, err = checkpoint.LoadCheckpoint(ds.id, ds.source, ds.target, conf.Options.TargetAuthType,
+		runId, ds.sourceOffset, dbid, err = checkpoint.LoadCheckpoint(ds.id, ds.source, ds.target, conf.Options.TargetAuthType,
 			ds.targetPassword, ds.checkpointName, conf.Options.TargetType == conf.RedisTypeCluster, conf.Options.SourceTLSEnable)
 		if err != nil {
 			log.Panicf("DbSyncer[%d] load checkpoint from %v failed[%v]", ds.id, ds.target, err)
 			return
 		}
-		log.Infof("DbSyncer[%d] checkpoint info: runId[%v], offset[%v] dbid[%v]", ds.id, runId, offset, dbid)
+		log.Infof("DbSyncer[%d] checkpoint info: runId[%v], sourceOffset[%v] dbid[%v]", ds.id, runId, ds.sourceOffset, dbid)
 	}
 
 	base.Status = "waitfull"
@@ -131,19 +137,18 @@ func (ds *DbSyncer) Sync() {
 	var isFullSync bool
 
 	ds.MaxParallelFullSyncs.Acquire(context.TODO(), 1)
-	if conf.Options.Psync {
-		input, nsize, isFullSync, runId = ds.sendPSyncCmd(ds.source, conf.Options.SourceAuthType, ds.sourcePassword,
-			conf.Options.SourceTLSEnable, runId, offset)
-		ds.runId = runId
-	} else {
-		// sync
-		input, nsize = ds.sendSyncCmd(ds.source, conf.Options.SourceAuthType, ds.sourcePassword,
-			conf.Options.SourceTLSEnable)
-	}
-	defer input.Close()
 
-	// start heartbeat
-	// undocumented feature
+	input, nsize, isFullSync, runId, err = ds.sendPSyncCmd(ds.source, conf.Options.SourceAuthType, ds.sourcePassword,
+		conf.Options.SourceTLSEnable, runId)
+	if err != nil {
+		log.Errorf("DbSyncer[%d] Restarting as error occurred initializing PSYNC %v", err)
+		ds.MaxParallelFullSyncs.Release(1)
+		go ds.Sync()
+		return
+	}
+	ds.runId = runId
+
+	defer input.Close()
 
 	reader := bufio.NewReaderSize(input, utils.ReaderBufferSize)
 
