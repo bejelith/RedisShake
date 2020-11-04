@@ -76,6 +76,7 @@ func (p *producer) run() {
 				log.Warn("Latency monitor failed to update key %s for %v", key, err)
 			}
 		}
+		c.Flush()
 	case <-p.runChannel:
 		break
 	}
