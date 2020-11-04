@@ -4,6 +4,7 @@
 package run
 
 import (
+	"github.com/alibaba/RedisShake/redis-shake/dbSync/latencymonitor"
 	"github.com/alibaba/RedisShake/redis-shake/dbSync/slot"
 	"golang.org/x/sync/semaphore"
 
@@ -40,6 +41,7 @@ func (cmd *CmdSync) Main() {
 			log.Errorf("get source slot distribution failed: %v", err)
 			return
 		}
+		latencymonitor.NewSyntheticProducer(slotDistribution, conf.Options.SourcePasswordRaw, conf.Options.SourceTLSEnable).Run()
 	} else {
 		for _, sourceAddress := range conf.Options.SourceAddressList {
 			slotDistribution = append(slotDistribution, utils.SlotOwner{
