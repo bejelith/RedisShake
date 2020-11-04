@@ -4,6 +4,7 @@
 package run
 
 import (
+	"github.com/alibaba/RedisShake/redis-shake/dbSync/slot"
 	"golang.org/x/sync/semaphore"
 
 	"github.com/alibaba/RedisShake/pkg/libs/log"
@@ -31,31 +32,28 @@ func (cmd *CmdSync) GetDetailedInfo() interface{} {
 }
 
 func (cmd *CmdSync) Main() {
-	type syncNode struct {
-		id                int
-		source            string
-		sourcePassword    string
-		target            []string
-		targetPassword    string
-		slotLeftBoundary  int
-		slotRightBoundary int
-	}
-
 	var slotDistribution []utils.SlotOwner
 	var err error
-	if conf.Options.SourceType == conf.RedisTypeCluster && conf.Options.ResumeFromBreakPoint {
+	if conf.Options.SourceType == conf.RedisTypeCluster {
 		if slotDistribution, err = utils.GetSlotDistribution(conf.Options.SourceAddressList[0], conf.Options.SourceAuthType,
 			conf.Options.SourcePasswordRaw, false); err != nil {
 			log.Errorf("get source slot distribution failed: %v", err)
 			return
 		}
+	} else {
+		for _, sourceAddress := range conf.Options.SourceAddressList {
+			slotDistribution = append(slotDistribution, utils.SlotOwner{
+				Master: sourceAddress,
+				Slave:  []string{},
+			})
+		}
 	}
-
+	log.Infof("Source Slots detected: %v", slotDistribution)
 	// source redis number
 	total := utils.GetTotalLink()
-	syncChan := make(chan syncNode, total)
+	syncChan := make(chan slot.SyncNode, total)
 	cmd.dbSyncers = make([]*dbSync.DbSyncer, total)
-	for i, source := range conf.Options.SourceAddressList {
+	for i, node := range slotDistribution {
 		var target []string
 		if conf.Options.TargetType == conf.RedisTypeCluster {
 			target = conf.Options.TargetAddressList
@@ -65,17 +63,15 @@ func (cmd *CmdSync) Main() {
 			target = []string{conf.Options.TargetAddressList[pick]}
 		}
 
-		// fetch slot boundary
-		leftSlotBoundary, rightSlotBoundary := utils.GetSlotBoundary(slotDistribution, source)
-
-		nd := syncNode{
-			id:                i,
-			source:            source,
-			sourcePassword:    conf.Options.SourcePasswordRaw,
-			target:            target,
-			targetPassword:    conf.Options.TargetPasswordRaw,
-			slotLeftBoundary:  leftSlotBoundary,
-			slotRightBoundary: rightSlotBoundary,
+		nd := slot.SyncNode{
+			Id:                i,
+			Source:            node.Master,
+			SourcePassword:    conf.Options.SourcePasswordRaw,
+			Slaves:            node.Slave,
+			Target:            target,
+			TargetPassword:    conf.Options.TargetPasswordRaw,
+			SlotLeftBoundary:  node.SlotLeftBoundary,
+			SlotRightBoundary: node.SlotRightBoundary,
 		}
 		syncChan <- nd
 	}
@@ -90,9 +86,8 @@ func (cmd *CmdSync) Main() {
 		}
 
 		// one sync link corresponding to one DbSyncer
-		ds := dbSync.NewDbSyncer(nd.id, nd.source, nd.sourcePassword, nd.target, nd.targetPassword,
-			nd.slotLeftBoundary, nd.slotRightBoundary, conf.Options.HttpProfile+nd.id, maxFullsyncs)
-		cmd.dbSyncers[nd.id] = ds
+		ds := dbSync.NewDbSyncer(&nd, conf.Options.HttpProfile+nd.Id, maxFullsyncs)
+		cmd.dbSyncers[nd.Id] = ds
 		// run in routine
 		go ds.Sync()
 	}

@@ -18,7 +18,7 @@ import (
 func (ds *DbSyncer) syncRDBFile(reader *bufio.Reader, target []string, authType, passwd string, nsize int64, tlsEnable bool) error {
 	pipe := utils.NewRDBLoader(reader, &ds.stat.rBytes, base.RDBPipeSize)
 	wait := make(chan struct{})
-	child_errors := make([]error, conf.Options.Parallel)
+	childErrors := make([]error, conf.Options.Parallel)
 	go func() {
 		defer close(wait)
 		var wg sync.WaitGroup
@@ -26,8 +26,12 @@ func (ds *DbSyncer) syncRDBFile(reader *bufio.Reader, target []string, authType,
 		for i := 0; i < conf.Options.Parallel; i++ {
 			go func(childId int) {
 				defer wg.Done()
-				c := utils.OpenRedisConn(target, authType, passwd, conf.Options.TargetType == conf.RedisTypeCluster,
+				c, err := utils.OpenRedisConn(target, authType, passwd, conf.Options.TargetType == conf.RedisTypeCluster,
 					tlsEnable)
+				if err !=nil{
+					childErrors[childId] = err
+					return
+				}
 				defer c.Close()
 				var lastdb uint32 = 0
 				for e := range pipe {
@@ -67,7 +71,7 @@ func (ds *DbSyncer) syncRDBFile(reader *bufio.Reader, target []string, authType,
 						log.Debugf("DbSyncer[%d] start restoring key[%s] with value length[%v]", ds.id, e.Key, len(e.Value))
 
 						if err := utils.RestoreRdbEntry(c, e); err != nil {
-							child_errors[childId] = err
+							childErrors[childId] = err
 							log.Errorf("DbSyncer[%d] restore of key[%s] failed: %v", ds.id, e.Key, err)
 							return
 						}
@@ -101,7 +105,7 @@ func (ds *DbSyncer) syncRDBFile(reader *bufio.Reader, target []string, authType,
 		metric.GetMetric(ds.id).SetFullSyncProgress(ds.id, uint64(100*stat.rBytes/nsize))
 	}
 	log.Infof("DbSyncer[%d] sync rdb done", ds.id)
-	for _, err := range child_errors {
+	for _, err := range childErrors {
 		if err != nil {
 			return err
 		}

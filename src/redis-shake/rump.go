@@ -96,7 +96,7 @@ func (dr *dbRumper) getStats() map[string]interface{} {
 
 func (dr *dbRumper) run() {
 	// single connection
-	dr.client = utils.OpenRedisConn([]string{dr.address}, conf.Options.SourceAuthType,
+	dr.client, _ = utils.OpenRedisConn([]string{dr.address}, conf.Options.SourceAuthType,
 		conf.Options.SourcePasswordRaw, false, conf.Options.SourceTLSEnable)
 
 	// some clouds may have several db under proxy
@@ -126,12 +126,12 @@ func (dr *dbRumper) run() {
 			tencentNodeId = dr.tencentNodes[i]
 		}
 
-		sourceClient := utils.OpenRedisConn([]string{dr.address}, conf.Options.SourceAuthType,
+		sourceClient, _ := utils.OpenRedisConn([]string{dr.address}, conf.Options.SourceAuthType,
 			conf.Options.SourcePasswordRaw, false, conf.Options.SourceTLSEnable)
-		targetClient := utils.OpenRedisConn(target, conf.Options.TargetAuthType,
+		targetClient, _ := utils.OpenRedisConn(target, conf.Options.TargetAuthType,
 			conf.Options.TargetPasswordRaw, conf.Options.TargetType == conf.RedisTypeCluster,
 			conf.Options.TargetTLSEnable)
-		targetBigKeyClient := utils.OpenRedisConn(target, conf.Options.TargetAuthType,
+		targetBigKeyClient, _ := utils.OpenRedisConn(target, conf.Options.TargetAuthType,
 			conf.Options.TargetPasswordRaw, conf.Options.TargetType == conf.RedisTypeCluster,
 			conf.Options.TargetTLSEnable)
 		executor := NewDbRumperExecutor(dr.id, i, sourceClient, targetClient, targetBigKeyClient, tencentNodeId)

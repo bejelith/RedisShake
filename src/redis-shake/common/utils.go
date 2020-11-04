@@ -31,14 +31,14 @@ import (
 	redigoCluster "github.com/vinllen/redis-go-cluster"
 )
 
-func OpenRedisConn(target []string, authType, passwd string, isCluster bool, tlsEnable bool) redigo.Conn {
+func OpenRedisConn(target []string, authType, passwd string, isCluster bool, tlsEnable bool) (redigo.Conn, error) {
 	return OpenRedisConnWithTimeout(target, authType, passwd, 0, 0, isCluster, tlsEnable)
 }
 
 func OpenRedisConnWithTimeout(target []string, authType, passwd string, readTimeout, writeTimeout time.Duration,
-	isCluster bool, tlsEnable bool) redigo.Conn {
+	isCluster bool, tlsEnable bool) (redigo.Conn, error) {
 	// return redigo.NewConn(OpenNetConn(target, authType, passwd), readTimeout, writeTimeout)
-		if isCluster {
+	if isCluster {
 		// the alive time isn't the tcp keep_alive parameter
 		cluster, err := redigoCluster.NewCluster(
 			&redigoCluster.Options{
@@ -51,17 +51,22 @@ func OpenRedisConnWithTimeout(target []string, authType, passwd string, readTime
 				Password:     passwd,
 			})
 		if err != nil {
-			log.Panicf("create cluster connection error[%v]", err)
-			return nil
+			log.Errorf("create cluster connection error[%v]", err)
+			return nil, err
 		}
-		return NewClusterConn(cluster, RecvChanSize)
+		return NewClusterConn(cluster, RecvChanSize), nil
 	} else {
 		// tls only support single connection currently
-		return redigo.NewConn(OpenNetConn(target[0], authType, passwd, tlsEnable), readTimeout, writeTimeout)
+		conn, err := OpenNetConn(target[0], authType, passwd, tlsEnable)
+		if err != nil {
+			log.Errorf("Failed to open Redis connection to %s", target[0])
+			return nil, err
+		}
+		return redigo.NewConn(conn, readTimeout, writeTimeout), nil
 	}
 }
 
-func OpenNetConn(target, authType, passwd string, tlsEnable bool) net.Conn {
+func OpenNetConn(target, authType, passwd string, tlsEnable bool) (net.Conn, error) {
 	d := &net.Dialer{
 		KeepAlive: time.Duration(conf.Options.KeepAlive) * time.Second,
 	}
@@ -73,13 +78,13 @@ func OpenNetConn(target, authType, passwd string, tlsEnable bool) net.Conn {
 		c, err = d.Dial("tcp", target)
 	}
 	if err != nil {
-		log.PanicErrorf(err, "cannot connect to '%s'", target)
+		return nil, err
 	}
 
 	// log.Infof("try to auth address[%v] with type[%v]", target, authType)
 	AuthPassword(c, authType, passwd)
 	// log.Info("auth OK!")
-	return c
+	return c, nil
 }
 
 func OpenNetConnSoft(target, authType, passwd string, tlsEnable bool) net.Conn {
@@ -140,10 +145,10 @@ func SendPSyncListeningPort(c net.Conn, port int) {
 	}
 }
 
-func AuthPassword(c net.Conn, authType, passwd string) {
+func AuthPassword(c net.Conn, authType, passwd string) error {
 	if passwd == "" {
 		log.Infof("input password is empty, skip auth address[%v] with type[%v].", c.RemoteAddr(), authType)
-		return
+		return nil
 	}
 
 	_, err := c.Write(redis.MustEncodeToBytes(redis.NewCommand(authType, passwd)))
@@ -153,15 +158,16 @@ func AuthPassword(c net.Conn, authType, passwd string) {
 
 	ret, err := ReadRESPEnd(c)
 	if err != nil {
-		log.PanicError(errors.Trace(err), "read auth response failed")
+		return errors.Errorf("read auth response failed :", err)
 	}
 	if strings.ToUpper(ret) != "+OK\r\n" {
-		log.Panicf("auth failed[%v]", RemoveRESPEnd(ret))
+		return errors.Errorf("auth failed[%v]", RemoveRESPEnd(ret))
 	}
+	return nil
 }
 
 func OpenSyncConn(target string, authType, passwd string, tlsEnable bool) (net.Conn, <-chan int64) {
-	c := OpenNetConn(target, authType, passwd, tlsEnable)
+	c, _ := OpenNetConn(target, authType, passwd, tlsEnable)
 	if _, err := c.Write(redis.MustEncodeToBytes(redis.NewCommand("sync"))); err != nil {
 		log.PanicError(errors.Trace(err), "write sync command failed")
 	}
@@ -209,15 +215,14 @@ func SendPSyncContinue(br *bufio.Reader, bw *bufio.Writer, InRunid string,
 		offset += 1
 	}
 
-
 	cmd := redis.NewCommand("psync", InRunid, offset)
 	if e := redis.Encode(bw, cmd, true); e != nil {
-		err = errors.Errorf("write psync command failed, continue", e)
+		err = errors.Errorf("write psync command failed, continue: %v", e)
 		return
 	}
 	r, e := redis.Decode(br)
 	if e != nil {
-		err = errors.Errorf( "invalid psync response, continue", e)
+		err = errors.Errorf("invalid psync response, continue: %v", e)
 		return
 	}
 
@@ -805,7 +810,7 @@ func RestoreRdbEntry(c redigo.Conn, e *rdb.BinEntry) error {
 
 	// TODO, need to judge big key
 	if e.Type != rdb.RDBTypeStreamListPacks &&
-			(uint64(len(e.Value)) > conf.Options.BigKeyThreshold || e.RealMemberCount != 0) {
+		(uint64(len(e.Value)) > conf.Options.BigKeyThreshold || e.RealMemberCount != 0) {
 		log.Debugf("restore big key[%s] with length[%v] and member count[%v]", e.Key, len(e.Value), e.RealMemberCount)
 		//use command
 		if conf.Options.KeyExists == "rewrite" && e.NeedReadLen == 1 {
@@ -940,7 +945,10 @@ func NewRDBLoader(reader *bufio.Reader, rbytes *atomic2.Int64, size int) chan *r
 }
 
 func GetRedisVersion(target, authType, auth string, tlsEnable bool) (string, error) {
-	c := OpenRedisConn([]string{target}, authType, auth, false, tlsEnable)
+	c, err := OpenRedisConn([]string{target}, authType, auth, false, tlsEnable)
+	if err != nil {
+		return "", err
+	}
 	defer c.Close()
 
 	infoStr, err := Bytes(c.Do("info", "server"))
@@ -963,7 +971,10 @@ func GetRedisVersion(target, authType, auth string, tlsEnable bool) (string, err
 }
 
 func GetRDBChecksum(target, authType, auth string, tlsEnable bool) (string, error) {
-	c := OpenRedisConn([]string{target}, authType, auth, false, tlsEnable)
+	c, err := OpenRedisConn([]string{target}, authType, auth, false, tlsEnable)
+	if err != nil {
+		return "", err
+	}
 	defer c.Close()
 
 	content, err := c.Do("config", "get", "rdbchecksum")

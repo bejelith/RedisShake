@@ -149,7 +149,7 @@ func (dr *dbRestorer) restoreRDBFile(reader *bufio.Reader, target []string, auth
 		for i := 0; i < conf.Options.Parallel; i++ {
 			go func() {
 				defer wg.Done()
-				c := utils.OpenRedisConn(target, auth_type, passwd, conf.Options.TargetType == conf.RedisTypeCluster,
+				c, _ := utils.OpenRedisConn(target, auth_type, passwd, conf.Options.TargetType == conf.RedisTypeCluster,
 					tlsEnable)
 				defer c.Close()
 				var lastdb uint32 = 0
@@ -215,7 +215,7 @@ func (dr *dbRestorer) restoreRDBFile(reader *bufio.Reader, target []string, auth
 
 func (dr *dbRestorer) restoreCommand(reader *bufio.Reader, target []string, auth_type, passwd string, tlsEnable bool) {
 	// inner usage. only use on targe
-	c := utils.OpenNetConn(target[0], auth_type, passwd, tlsEnable)
+	c, _ := utils.OpenNetConn(target[0], auth_type, passwd, tlsEnable)
 	defer c.Close()
 
 	writer := bufio.NewWriterSize(c, utils.WriterBufferSize)

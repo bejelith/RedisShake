@@ -45,8 +45,8 @@ func (s2s *Standalone2StandaloneCase) Run() error {
 		// case 1
 		log.Info("case 1: all")
 		// build client
-		sourceConn := shakeUtils.OpenRedisConn([]string{fmt.Sprintf(":%d", s2s.SourcePort)}, "auth", "", false, false)
-		targetConn := shakeUtils.OpenRedisConn([]string{fmt.Sprintf(":%d", s2s.TargetPort)}, "auth", "", false, false)
+		sourceConn, _ := shakeUtils.OpenRedisConn([]string{fmt.Sprintf(":%d", s2s.SourcePort)}, "auth", "", false, false)
+		targetConn, _ := shakeUtils.OpenRedisConn([]string{fmt.Sprintf(":%d", s2s.TargetPort)}, "auth", "", false, false)
 
 		sc := subCase.NewSubCase(sourceConn, targetConn, s2s.SourcePort, s2s.TargetPort, nil, nil,
 			nil, nil, "", false)

@@ -22,25 +22,28 @@ import (
 	"unsafe"
 )
 
-func (ds *DbSyncer) syncCommand(reader *bufio.Reader, target []string, authType, passwd string, tlsEnable bool, dbid int) {
+func (ds *DbSyncer) syncCommand(reader *bufio.Reader, target []string, authType, passwd string, tlsEnable bool, dbid int) error {
 	isCluster := conf.Options.TargetType == conf.RedisTypeCluster
-	c := utils.OpenRedisConnWithTimeout(target, authType, passwd, incrSyncReadeTimeout, incrSyncReadeTimeout, isCluster, tlsEnable)
+	c, err := utils.OpenRedisConnWithTimeout(target, authType, passwd, incrSyncReadeTimeout, incrSyncReadeTimeout, isCluster, tlsEnable)
+	if err != nil {
+		return err
+	}
 	defer c.Close()
 
 	ds.sendBuf = make(chan cmdDetail, conf.Options.SenderCount)
 	ds.delayChannel = make(chan *delayNode, conf.Options.SenderDelayChannelSize)
 
-	// fetch source redis sourceOffset
+	// fetch Source redis sourceOffset
 	// keeps track of offsets for reporting purposes ... the more the better -.-
 	go ds.fetchOffset()
 
-	// receiver target reply
+	// receiver Target reply
 	go ds.receiveTargetReply(c)
 
-	// parse command from source redis
+	// parse command from Source redis
 	go ds.parseSourceCommand(reader)
 
-	// do send to target
+	// do send to Target
 	go ds.sendTargetCommand(c)
 
 	select {}
@@ -49,7 +52,7 @@ func (ds *DbSyncer) syncCommand(reader *bufio.Reader, target []string, authType,
 	//	time.Sleep(time.Second)
 	//	nStat := ds.stat.Stat()
 	//	var b bytes.Buffer
-	//	fmt.Fprintf(&b, "DbSyncer[%d] sync: ", ds.id)
+	//	fmt.Fprintf(&b, "DbSyncer[%d] sync: ", ds.Id)
 	//	fmt.Fprintf(&b, " +forwardCommands=%-6d", nStat.wCommands - lStat.wCommands)
 	//	fmt.Fprintf(&b, " +filterCommands=%-6d", nStat.incrSyncFilter - lStat.incrSyncFilter)
 	//	fmt.Fprintf(&b, " +writeBytes=%d", nStat.wBytes - lStat.wBytes)
@@ -64,23 +67,31 @@ func (ds *DbSyncer) fetchOffset() {
 		return
 	}
 
-	srcConn := utils.OpenRedisConnWithTimeout([]string{ds.source}, conf.Options.SourceAuthType, ds.sourcePassword,
+	srcConn, err := utils.OpenRedisConnWithTimeout([]string{ds.node.Source}, conf.Options.SourceAuthType, ds.node.SourcePassword,
 		incrSyncReadeTimeout, incrSyncReadeTimeout, false, conf.Options.SourceTLSEnable)
+	if err != nil {
+		log.Errorf("DbSyncer[%d] fetchOffset routine died: %v", err)
+		return
+	}
 	ticker := time.NewTicker(10 * time.Second)
 	for range ticker.C {
 		offset, err := utils.GetFakeSlaveOffset(srcConn)
 		if err != nil {
+			var connErr error
 			// log.PurePrintf("%s\n", NewLogItem("GetFakeSlaveOffsetFail", "WARN", NewErrorLogDetail("", err.Error())))
 			log.Warnf("DbSyncer[%d] Event:GetFakeSlaveOffsetFail\tId:%s\tWarn:%s",
 				ds.id, conf.Options.Id, err.Error())
 
 			// Reconnect while network error happen
 			if err == io.EOF {
-				srcConn = utils.OpenRedisConnWithTimeout([]string{ds.source}, conf.Options.SourceAuthType,
-					ds.sourcePassword, incrSyncReadeTimeout, incrSyncReadeTimeout, false, conf.Options.SourceTLSEnable)
+				srcConn, connErr = utils.OpenRedisConnWithTimeout([]string{ds.node.Source}, conf.Options.SourceAuthType,
+					ds.node.SourcePassword, incrSyncReadeTimeout, incrSyncReadeTimeout, false, conf.Options.SourceTLSEnable)
 			} else if _, ok := err.(net.Error); ok {
-				srcConn = utils.OpenRedisConnWithTimeout([]string{ds.source}, conf.Options.SourceAuthType,
-					ds.sourcePassword, incrSyncReadeTimeout, incrSyncReadeTimeout, false, conf.Options.SourceTLSEnable)
+				srcConn, connErr = utils.OpenRedisConnWithTimeout([]string{ds.node.Source}, conf.Options.SourceAuthType,
+					ds.node.SourcePassword, incrSyncReadeTimeout, incrSyncReadeTimeout, false, conf.Options.SourceTLSEnable)
+			}
+			if connErr != nil {
+				log.Errorf("DbSyncer[%d] fetchOffset error detected: %v", ds.id, err)
 			}
 		} else {
 			// ds.SyncStat.SetOffset(sourceOffset)
@@ -102,10 +113,10 @@ func (ds *DbSyncer) receiveTargetReply(c redigo.Conn) {
 		reply, err := c.Receive()
 
 		recvId.Incr()
-		id := recvId.Get() // receive id
+		id := recvId.Get() // receive Id
 
 		// print debug log of receive reply
-		log.Debugf("DbSyncer[%d] receive reply-id[%v]: [%v], error:[%v]", ds.id, id, reply, err)
+		log.Debugf("DbSyncer[%d] receive reply-Id[%v]: [%v], error:[%v]", ds.id, id, reply, err)
 
 		if conf.Options.Metric == false {
 			continue
@@ -135,12 +146,12 @@ func (ds *DbSyncer) receiveTargetReply(c redigo.Conn) {
 
 		// TODO, how to calculate the delay in transaction mode?
 		/*if node != nil {
-			if node.id == id {
-				metric.GetMetric(ds.id).AddDelay(uint64(time.Now().Sub(node.t).Nanoseconds()) / 1000000) // ms
+			if node.Id == Id {
+				metric.GetMetric(ds.Id).AddDelay(uint64(time.Now().Sub(node.t).Nanoseconds()) / 1000000) // ms
 				node = nil
-			} else if node.id < id {
-				log.Panicf("DbSyncer[%d] receive id invalid: node-id[%v] < receive-id[%v]",
-					ds.id, node.id, id)
+			} else if node.Id < Id {
+				log.Panicf("DbSyncer[%d] receive Id invalid: node-Id[%v] < receive-Id[%v]",
+					ds.Id, node.Id, Id)
 			}
 		}*/
 	}
@@ -160,7 +171,7 @@ func (ds *DbSyncer) parseSourceCommand(reader *bufio.Reader) {
 		// sendMarkId atomic2.Int64 // sendMarkId is also used as mark the sendId in sender routine
 	)
 
-	// if the start db id != 0, send dbid to the target at first
+	// if the start db Id != 0, send dbid to the Target at first
 	if ds.startDbId != 0 {
 		log.Infof("last dbid[%v] != 0, send 'select' first", ds.startDbId)
 		dbS := fmt.Sprintf("%d", ds.startDbId)
@@ -266,11 +277,11 @@ func (ds *DbSyncer) sendTargetCommand(c redigo.Conn) {
 
 	// cache the batch oplog
 	cachedTunnel := make([]cmdDetail, 0, conf.Options.SenderCount+1)
-	checkpointRunId := fmt.Sprintf("%s-%s", ds.source, utils.CheckpointRunId)
-	checkpointVersion := fmt.Sprintf("%s-%s", ds.source, utils.CheckpointVersion)
-	checkpointOffset := fmt.Sprintf("%s-%s", ds.source, utils.CheckpointOffset)
+	checkpointRunId := fmt.Sprintf("%s-%s", ds.node.Source, utils.CheckpointRunId)
+	checkpointVersion := fmt.Sprintf("%s-%s", ds.node.Source, utils.CheckpointVersion)
+	checkpointOffset := fmt.Sprintf("%s-%s", ds.node.Source, utils.CheckpointOffset)
 	ticker := time.NewTicker(500 * time.Millisecond)
-	// mark whether the given db has already send runId, no need to send run-id each time.
+	// mark whether the given db has already send runId, no need to send run-Id each time.
 	runIdMap := make(map[int]struct{})
 
 	// do send
@@ -321,11 +332,11 @@ func (ds *DbSyncer) sendTargetCommand(c redigo.Conn) {
 		}
 
 		if needBatch {
-			// need send run-id?
+			// need send run-Id?
 			if _, ok := runIdMap[lastOplog.Db]; !ok {
 				runIdMap[lastOplog.Db] = struct{}{}
 				ds.addSendId(&sendId, 2)
-				// run id
+				// run Id
 				if err := c.Send("hset", ds.checkpointName, checkpointRunId, ds.runId); err != nil {
 					log.Panicf("DbSyncer[%d] Event:SendToTargetFail\tId:%s\tError:%s\t",
 						ds.id, conf.Options.Id, err.Error())

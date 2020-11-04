@@ -15,7 +15,7 @@ import (
 	"github.com/alibaba/RedisShake/redis-shake/configure"
 )
 
-// send command to source redis
+// send command to Source redis
 
 func (ds *DbSyncer) sendSyncCmd(master, authType, passwd string, tlsEnable bool) (net.Conn, int64) {
 	c, wait := utils.OpenSyncConn(master, authType, passwd, tlsEnable)
@@ -23,19 +23,22 @@ func (ds *DbSyncer) sendSyncCmd(master, authType, passwd string, tlsEnable bool)
 		select {
 		case nsize := <-wait:
 			if nsize == 0 {
-				log.Infof("DbSyncer[%d] + waiting source rdb", ds.id)
+				log.Infof("DbSyncer[%d] + waiting Source rdb", ds.id)
 			} else {
 				return c, nsize
 			}
 		case <-time.After(time.Second):
-			log.Infof("DbSyncer[%d] - waiting source rdb", ds.id)
+			log.Infof("DbSyncer[%d] - waiting Source rdb", ds.id)
 		}
 	}
 }
 
 // This function actually doesnt not send Psync command, the command is sent by "SendPSyncContinue" (whatever it means)
-func (ds *DbSyncer) sendPSyncCmd(master, authType, passwd string, tlsEnable bool, runId string ) (pipe.Reader, int64, bool, string, error) {
-	c := utils.OpenNetConn(master, authType, passwd, tlsEnable)
+func (ds *DbSyncer) sendPSyncCmd(master, authType, passwd string, tlsEnable bool, runId string) (pipe.Reader, int64, bool, string, error) {
+	c, err := utils.OpenNetConn(master, authType, passwd, tlsEnable)
+	if err != nil {
+		return nil, -1, false, "", err
+	}
 	log.Infof("DbSyncer[%d] psync connect '%v' with auth type[%v] OK!", ds.id, master, authType)
 
 	utils.SendPSyncListeningPort(c, conf.Options.HttpProfile)
@@ -46,7 +49,7 @@ func (ds *DbSyncer) sendPSyncCmd(master, authType, passwd string, tlsEnable bool
 	// writer buffer bind to client
 	bw := bufio.NewWriterSize(c, utils.WriterBufferSize)
 
-	log.Infof("DbSyncer[%d] try to send 'psync' command: run-id[%v], sourceOffset[%v]", ds.id, runId, ds.sourceOffset)
+	log.Infof("DbSyncer[%d] try to send 'psync' command: run-Id[%v], sourceOffset[%v]", ds.id, runId, ds.sourceOffset)
 	// send psync command and decode the result
 	runid, offset, wait, err := utils.SendPSyncContinue(br, bw, runId, ds.sourceOffset)
 	if err != nil {
@@ -65,7 +68,7 @@ func (ds *DbSyncer) sendPSyncCmd(master, authType, passwd string, tlsEnable bool
 		// fullresync
 		log.Infof("DbSyncer[%d] psync runid = %s, sourceOffset = %d, fullsync", ds.id, runid, offset)
 
-		// get rdb file size, wait source rdb dump successfully.
+		// get rdb file size, wait Source rdb dump successfully.
 		var nsize int64
 		for nsize == 0 {
 			select {
@@ -88,7 +91,7 @@ func (ds *DbSyncer) runIncrementalSync(c net.Conn, br *bufio.Reader, bw *bufio.W
 		log.Info("DbSyncer[%d] RDB size %d", ds.id, rdbSize)
 		p := make([]byte, 8192)
 		// read rdb in for loop
-		for ; rdbSize != 0; {
+		for rdbSize != 0 {
 			// br -> pipew
 			rdbSize -= utils.Iocopy(br, pipew, p, rdbSize)
 		}
@@ -96,7 +99,7 @@ func (ds *DbSyncer) runIncrementalSync(c net.Conn, br *bufio.Reader, bw *bufio.W
 
 	for {
 		/*
-		 * read from br(source redis) and write into pipew.
+		 * read from br(Source redis) and write into pipew.
 		 * Generally speaking, this function is forever run.
 		 */
 		_, err := ds.pSyncPipeCopy(c, br, bw, pipew)
@@ -117,7 +120,7 @@ func (ds *DbSyncer) runIncrementalSync(c net.Conn, br *bufio.Reader, bw *bufio.W
 			base.Status = "reopen"
 			time.Sleep(time.Second)
 
-			c = utils.OpenNetConnSoft(master, authType, passwd, tlsEnable)//TODO we dont get to know what's the error when open a socket?!
+			c = utils.OpenNetConnSoft(master, authType, passwd, tlsEnable) //TODO we dont get to know what's the error when open a socket?!
 			if c != nil {
 				log.Infof("DbSyncer[%d] Event:SourceConnReopenSuccess\tId: %s\tsourceOffset = %d",
 					ds.id, conf.Options.Id, ds.sourceOffset)
@@ -128,7 +131,7 @@ func (ds *DbSyncer) runIncrementalSync(c net.Conn, br *bufio.Reader, bw *bufio.W
 				bw = bufio.NewWriterSize(c, utils.WriterBufferSize)
 				_, _, _, err = utils.SendPSyncContinue(br, bw, runId, ds.sourceOffset)
 				if err != nil {
-					// If PSYNC fails we need skip PipeCopy but retry to re-establish connection to the source so we stay in the loop
+					// If PSYNC fails we need skip PipeCopy but retry to re-establish connection to the Source so we stay in the loop
 					log.Errorf("DbSyncer[%d] retrying incremental sync as was error found %d", err)
 					time.Sleep(30 * time.Second) //TODO maybe implement an exponential backoff
 				}
@@ -152,12 +155,12 @@ func (ds *DbSyncer) pSyncPipeCopy(c net.Conn, br *bufio.Reader, bw *bufio.Writer
 			case <-ds.WaitFull:
 				ds.sourceOffset += nread.Get()
 				if err := utils.SendPSyncAck(bw, ds.sourceOffset); err != nil {
-					log.Errorf("dbSyncer[%v] send sourceOffset to source redis failed[%v]", ds.id, err)
+					log.Errorf("dbSyncer[%v] send sourceOffset to Source redis failed[%v]", ds.id, err)
 					return
 				}
 			default:
 				if err := utils.SendPSyncAck(bw, 0); err != nil {
-					log.Errorf("dbSyncer[%v] send sourceOffset to source redis failed[%v]", ds.id, err)
+					log.Errorf("dbSyncer[%v] send sourceOffset to Source redis failed[%v]", ds.id, err)
 					return
 				}
 			}
