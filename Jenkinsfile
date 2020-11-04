@@ -19,36 +19,36 @@ pipeline {
 
     stages {
 
-        stage('Prepare') {
-            steps {
-                sh 'echo $PATH'
-                sh 'echo STARTING BUILD'
+      stage('Prepare') {
+        steps {
+            sh 'echo $PATH'
+            sh 'echo STARTING BUILD'
+        }
+      }
+
+      stage('Build') {
+        steps {
+            VersionNumber([versionNumberString : '${env.BUILD_ID}'])
+            deleteDir()
+            checkout scm
+
+            withCredentials([file(credentialsId: 'DPMBUILD-ARTIF-CREDENTIALS', variable: 'dpmbuildfile')]) {
+                sh 'cp $dpmbuildfile ~/.docker/config.json'
+            }
+
+            withCredentials([usernameColonPassword(credentialsId: 'DPMBUILD_ARTIF', variable: 'USERPASS')]) {
+                sh "docker build --build-arg goproxy=\"https://${USERPASS}@artifactory.workday.com/artifactory/api/go/go\" -t ${IMAGE} ."
+
             }
         }
-
-        stage('Build') {
-            steps {
-                VersionNumber([versionNumberString : '${env.BUILD_ID}'])
-                deleteDir()
-                checkout scm
-
-                withCredentials([file(credentialsId: 'DPMBUILD-ARTIF-CREDENTIALS', variable: 'dpmbuildfile')]) {
-                    sh 'cp $dpmbuildfile ~/.docker/config.json'
-                }
-
-                withCredentials([usernameColonPassword(credentialsId: 'DPMBUILD_ARTIF', variable: 'USERPASS')]) {
-                    sh "docker build --build-arg goproxy=\"https://${USERPASS}@artifactory.workday.com/artifactory/api/go/go\" -t ${IMAGE} ."
-
-                }
-            }
-        }
-        stage('Publish'){
-            steps{
-                sh "docker push ${env.IMAGE}"
-                sh "docker tag ${env.IMAGE} ${env.BASE_IMAGE}:latest"
-                sh "docker push ${env.BASE_IMAGE}:latest"
-            }
-        }
+      }
+      stage('Publish'){
+          steps{
+              sh "docker push ${env.IMAGE}"
+              sh "docker tag ${env.IMAGE} ${env.BASE_IMAGE}:latest"
+              sh "docker push ${env.BASE_IMAGE}:latest"
+          }
+      }
 
     }
 }
