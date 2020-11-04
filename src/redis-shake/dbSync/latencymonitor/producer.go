@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-var KEY_PREFIX = "sinthetic_latency_generator_"
+var KeyPrefix = "synthetic_latency_generator_"
 
 type Producer interface {
 	Run()
@@ -21,26 +21,26 @@ type Producer interface {
 func NewSyntheticProducer(slots []utils.SlotOwner, password string, tls bool) Producer {
 	keys, masters := calculateKeys(slots)
 	return &producer{
-		slots:      slots,
-		keys:       keys,
-		masters:    masters,
-		password:   password,
-		tls:        tls,
-		runChannel: make(chan struct{}),
-		running:    atomic2.Bool{},
+		slots:                     slots,
+		keys:                      keys,
+		masters:                   masters,
+		password:                  password,
+		tls:                       tls,
+		runChannel:                make(chan struct{}),
+		running:                   atomic2.Bool{},
 		redisClusterClientFactory: redisConnWrapper.DefaultRedisClusterFactory,
 	}
 }
 
 type producer struct {
-	slots      []utils.SlotOwner
-	keys       []string
-	runChannel chan struct{}
-	password   string
-	tls        bool
-	masters    []string
-	error      error
-	running    atomic2.Bool
+	slots                     []utils.SlotOwner
+	keys                      []string
+	runChannel                chan struct{}
+	password                  string
+	tls                       bool
+	masters                   []string
+	error                     error
+	running                   atomic2.Bool
 	redisClusterClientFactory redisConnWrapper.RedisClusterFactory
 }
 
@@ -50,7 +50,7 @@ func (p *producer) Error() error {
 
 func findKeyInRange(min, max int) string {
 	for i := 0; ; i++ {
-		key := fmt.Sprintf("%s%s", KEY_PREFIX, strconv.Itoa(i))
+		key := fmt.Sprintf("%s%s", KeyPrefix, strconv.Itoa(i))
 		hash := int(crc16(key))
 		if hash >= min && hash <= max {
 			return key
@@ -69,14 +69,14 @@ func (p *producer) run() {
 	defer c.Close()
 	defer p.Stop()
 	select {
-	case <- ticker.C:
+	case <-ticker.C:
 		for key := range p.keys {
 			now := strconv.Itoa(int(time.Now().UnixNano()))
 			if _, err := c.Do("set", key, now); err != nil {
 				log.Warn("Latency monitor failed to update key %s for %v", key, err)
 			}
 		}
-	case <- p.runChannel:
+	case <-p.runChannel:
 		break
 	}
 }
@@ -85,11 +85,13 @@ func (p *producer) Run() {
 	if !p.running.CompareAndSwap(false, true) {
 		return
 	}
+	log.Info("Latency monitor started producing timestamps")
 	p.runChannel = make(chan struct{})
 	go p.run()
 }
 
 func (p *producer) Stop() {
+	p.running.Set(false)
 	close(p.runChannel)
 }
 
