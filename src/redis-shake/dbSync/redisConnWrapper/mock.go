@@ -3,11 +3,7 @@ package redisConnWrapper
 type MockRedisConn struct {
 	DoCount int
 	Host    string
-<<<<<<< HEAD
 	DoFunc  func(string, ...interface{}) (interface{}, error)
-=======
-	DoFunc      func(string, ...interface{}) (interface{}, error)
->>>>>>> 6643c58 (Produce keys for each master with timestamp)
 }
 
 func (m MockRedisConn) Close() error {
@@ -34,7 +30,6 @@ func (m MockRedisConn) Receive() (reply interface{}, err error) {
 	panic("implement me")
 }
 
-<<<<<<< HEAD
 type MockRedisCluster struct {
 	DoCount int
 	Host    string
@@ -65,5 +60,3 @@ func (m MockRedisCluster) Flush() error {
 func (m MockRedisCluster) Receive() (reply interface{}, err error) {
 	panic("implement me")
 }
-=======
->>>>>>> 6643c58 (Produce keys for each master with timestamp)
