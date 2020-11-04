@@ -5,15 +5,8 @@ import (
 	"github.com/alibaba/RedisShake/redis-shake/dbSync/slot"
 	redigo "github.com/garyburd/redigo/redis"
 	"github.com/stretchr/testify/assert"
-	"regexp"
 	"testing"
 )
-
-func TestR(t *testing.T){
-	slaveRegex := regexp.MustCompile("^role:slave")
-	line := "role:slave \r"
-	assert.True(t, slaveRegex.MatchString(line))
-}
 
 func TestFindAValidMaster(t *testing.T) {
 	defaultRedisConnFactory = func(host, passwd string, tls bool) (redigo.Conn, error) {
@@ -71,7 +64,7 @@ type mockRedisConn struct {
 }
 
 func (m mockRedisConn) Close() error {
-	panic("implement me")
+	return nil
 }
 
 func (m mockRedisConn) Err() error {
