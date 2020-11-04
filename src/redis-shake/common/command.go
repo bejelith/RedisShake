@@ -188,9 +188,39 @@ type SlotOwner struct {
 	SlotLeftBoundary  int
 	SlotRightBoundary int
 }
-
+/*
+Parse cluster slots command result
+	127.0.0.1:7001> cluster slots
+	1) 1) (integer) 0
+	   2) (integer) 4095
+	   3) 1) "127.0.0.1"
+		  2) (integer) 7000
+	   4) 1) "127.0.0.1"
+		  2) (integer) 7004
+	2) 1) (integer) 12288
+	   2) (integer) 16383
+	   3) 1) "127.0.0.1"
+		  2) (integer) 7003
+	   4) 1) "127.0.0.1"
+		  2) (integer) 7007
+	3) 1) (integer) 4096
+	   2) (integer) 8191
+	   3) 1) "127.0.0.1"
+		  2) (integer) 7001
+	   4) 1) "127.0.0.1"
+		  2) (integer) 7005
+	4) 1) (integer) 8192
+	   2) (integer) 12287
+	   3) 1) "127.0.0.1"
+		  2) (integer) 7002
+	   4) 1) "127.0.0.1"
+		  2) (integer) 7006
+ */
 func GetSlotDistribution(target, authType, auth string, tlsEnable bool) ([]SlotOwner, error) {
-	c := OpenRedisConn([]string{target}, authType, auth, false, tlsEnable)
+	c, err := OpenRedisConn([]string{target}, authType, auth, false, tlsEnable)
+	if err != nil {
+		return nil, err
+	}
 	defer c.Close()
 
 	content, err := c.Do("cluster", "slots")

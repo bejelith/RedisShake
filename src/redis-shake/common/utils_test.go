@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"testing"
 
-	"redis-shake/unit_test_common"
+	"github.com/alibaba/RedisShake/redis-shake/unit_test_common"
 
 	"github.com/stretchr/testify/assert"
 )

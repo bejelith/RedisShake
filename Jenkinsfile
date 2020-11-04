@@ -12,7 +12,9 @@ pipeline {
     environment {
         BERKSHELF_PATH="/tmp/berkshelf-chef-parcel-omsdpm"
         JAVA_HOME='/usr/java/default/'
-
+        BUILD_ID = VersionNumber([versionNumberString : '${BRANCH_NAME}.' + env.BUILD_NUMBER])
+        BASE_IMAGE = "docker-dev-artifactory.workday.com/dpm/redisshake"
+        IMAGE = "${BASE_IMAGE}:$env.BUILD_ID"
     }
 
     stages {
@@ -25,12 +27,8 @@ pipeline {
       }
 
       stage('Build') {
-        environment {
-            BUILD_ID = VersionNumber([versionNumberString : '${BRANCH_NAME}.' + env.BUILD_NUMBER])
-          BASE_IMAGE = "docker-dev-artifactory.workday.com/dpm/redisshake"
-          IMAGE = "${BASE_IMAGE}:$env.BUILD_ID"
-        }
         steps {
+            VersionNumber([versionNumberString : '${env.BUILD_ID}'])
             deleteDir()
             checkout scm
 
@@ -40,11 +38,16 @@ pipeline {
 
             withCredentials([usernameColonPassword(credentialsId: 'DPMBUILD_ARTIF', variable: 'USERPASS')]) {
                 sh "docker build --build-arg goproxy=\"https://${USERPASS}@artifactory.workday.com/artifactory/api/go/go\" -t ${IMAGE} ."
-                sh "docker push ${IMAGE}"
-                sh "docker tag ${IMAGE} ${BASE_IMAGE}:latest"
-                sh "docker push ${BASE_IMAGE}:latest"
+
             }
         }
+      }
+      stage('Publish'){
+          steps{
+              sh "docker push ${env.IMAGE}"
+              sh "docker tag ${env.IMAGE} ${env.BASE_IMAGE}:latest"
+              sh "docker push ${env.BASE_IMAGE}:latest"
+          }
       }
 
     }

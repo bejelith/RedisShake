@@ -6,6 +6,8 @@ import (
 	"github.com/alibaba/RedisShake/pkg/libs/log"
 	"github.com/alibaba/RedisShake/redis-shake/base"
 	"github.com/alibaba/RedisShake/redis-shake/common"
+	"github.com/alibaba/RedisShake/redis-shake/dbSync/slot"
+	"github.com/alibaba/RedisShake/redis-shake/dbSync/slotsupervisor"
 	"github.com/alibaba/RedisShake/redis-shake/metric"
 	"golang.org/x/sync/semaphore"
 	"io"
@@ -17,16 +19,10 @@ import (
 )
 
 // one sync link corresponding to one DbSyncer
-func NewDbSyncer(id int, source, sourcePassword string, target []string, targetPassword string,
-	slotLeftBoundary, slotRightBoundary int, httpPort int, maxFullsyncs *semaphore.Weighted) *DbSyncer {
+func NewDbSyncer(node *slot.SyncNode, httpPort int, maxFullsyncs *semaphore.Weighted) *DbSyncer {
 	ds := &DbSyncer{
-		id:                         id,
-		source:                     source,
-		sourcePassword:             sourcePassword,
-		target:                     target,
-		targetPassword:             targetPassword,
-		slotLeftBoundary:           slotLeftBoundary,
-		slotRightBoundary:          slotRightBoundary,
+		id:							node.Id,
+		node:                       node,
 		httpProfilePort:            httpPort,
 		enableResumeFromBreakPoint: conf.Options.ResumeFromBreakPoint,
 		checkpointName:             utils.CheckpointKey, // default, may be modified
@@ -37,22 +33,19 @@ func NewDbSyncer(id int, source, sourcePassword string, target []string, targetP
 	}
 
 	// add metric
-	metric.AddMetric(id)
+	metric.AddMetric(ds.id)
 
 	return ds
 }
 
 type DbSyncer struct {
-	id int // current id in all syncer
+	id             int // current id in all syncer
+	node           *slot.SyncNode
 
-	source            string   // source address
-	sourcePassword    string   // source password
-	target            []string // target address
-	targetPassword    string   // target password
-	runId             string   // source runId
-	slotLeftBoundary  int      // mark the left slot boundary if enable resuming from break point and is cluster
-	slotRightBoundary int      // mark the right slot boundary if enable resuming from break point and is cluster
-	httpProfilePort   int      // http profile port
+	runId string // source runId
+	//	slotLeftBoundary  int    // mark the left slot boundary if enable resuming from break point and is cluster
+	//	slotRightBoundary int    // mark the right slot boundary if enable resuming from break point and is cluster
+	httpProfilePort int // http profile port
 
 	// stat info
 	stat Status
@@ -80,8 +73,8 @@ type DbSyncer struct {
 
 func (ds *DbSyncer) GetExtraInfo() map[string]interface{} {
 	return map[string]interface{}{
-		"SourceAddress":      ds.source,
-		"TargetAddress":      ds.target,
+		"SourceAddress":      ds.node.Source,
+		"TargetAddress":      ds.node.Target,
 		"SenderBufCount":     len(ds.sendBuf),
 		"ProcessingCmdCount": len(ds.delayChannel),
 		"TargetDBOffset":     ds.stat.targetOffset.Get(),
@@ -97,35 +90,51 @@ func (ds *DbSyncer) incrementRetryCounter() {
 	ds.fullSyncRetryCounter++
 	metric.GetMetric(ds.id).RetryCounter = ds.fullSyncRetryCounter
 	if ds.fullSyncRetryCounter > 3 {
-		log.Panicf("DbSyncer[%d] max amount of failures reached for %s", ds.id, strings.Join(ds.target, ","))
+		log.Panicf("DbSyncer[%d] max amount of failures reached for %s", ds.id, strings.Join(ds.node.Target, ","))
 	}
+}
+
+// Track Source master changes when start Sync() when we synk from a Cluster
+func (ds *DbSyncer) updateSlotTopology() {
+	if conf.Options.SourceType != conf.RedisTypeCluster {
+		return
+	}
+	slot, slotError := slotsupervisor.New(*ds.node).GetSlotState()
+	if slotError != nil {
+		log.Panicf("Unable to find a master for the current sync: %v", slotError)
+	}
+	ds.node = slot
 }
 
 // main
 func (ds *DbSyncer) Sync() {
 	ds.incrementRetryCounter()
-	//We bring back the source master offset to the last committed offset to target
+	ds.updateSlotTopology()
+
+	//We bring back the Source master offset to the last committed offset to Target
 	//this is needed as we may loose the internal buffer when Sync() or child calls panic
 	ds.sourceOffset = ds.lastCommittedOffset
 
+	log.Infof("Starting sync for node: %v", ds.node)
+
 	log.Infof("DbSyncer[%d] starts syncing data from %v to %v with http[%v], enableResumeFromBreakPoint[%v], "+
-		"slot boundary[%v, %v]", ds.id, ds.source, ds.target, ds.httpProfilePort, ds.enableResumeFromBreakPoint,
-		ds.slotLeftBoundary, ds.slotRightBoundary)
+		"slot boundary[%v, %v]", ds.id, ds.node.Source, ds.node.Target, ds.httpProfilePort, ds.enableResumeFromBreakPoint,
+		ds.node.SlotLeftBoundary, ds.node.SlotRightBoundary)
 
 	var err error
 	runId, dbid := "?", 0
 	if ds.enableResumeFromBreakPoint {
 		// assign the checkpoint name with suffix if is cluster
-		if ds.slotLeftBoundary != -1 {
-			ds.checkpointName = utils.ChoseSlotInRange(utils.CheckpointKey, ds.slotLeftBoundary, ds.slotRightBoundary)
+		if ds.node.SlotLeftBoundary != -1 {
+			ds.checkpointName = utils.ChoseSlotInRange(utils.CheckpointKey, ds.node.SlotLeftBoundary, ds.node.SlotRightBoundary)
 		}
 
 		// checkpoint reload if has
 		log.Infof("DbSyncer[%d] enable resume from break point, try to load checkpoint", ds.id)
-		runId, ds.sourceOffset, dbid, err = checkpoint.LoadCheckpoint(ds.id, ds.source, ds.target, conf.Options.TargetAuthType,
-			ds.targetPassword, ds.checkpointName, conf.Options.TargetType == conf.RedisTypeCluster, conf.Options.SourceTLSEnable)
+		runId, ds.sourceOffset, dbid, err = checkpoint.LoadCheckpoint(ds.id, ds.node.Source, ds.node.Target, conf.Options.TargetAuthType,
+			ds.node.TargetPassword, ds.checkpointName, conf.Options.TargetType == conf.RedisTypeCluster, conf.Options.SourceTLSEnable)
 		if err != nil {
-			log.Panicf("DbSyncer[%d] load checkpoint from %v failed[%v]", ds.id, ds.target, err)
+			log.Panicf("DbSyncer[%d] load checkpoint from %v failed[%v]", ds.id, ds.node.Target, err)
 			return
 		}
 		log.Infof("DbSyncer[%d] checkpoint info: runId[%v], sourceOffset[%v] dbid[%v]", ds.id, runId, ds.sourceOffset, dbid)
@@ -136,9 +145,9 @@ func (ds *DbSyncer) Sync() {
 	var nsize int64
 	var isFullSync bool
 
-	ds.MaxParallelFullSyncs.Acquire(context.TODO(), 1)
+	_ = ds.MaxParallelFullSyncs.Acquire(context.TODO(), 1)
 
-	input, nsize, isFullSync, runId, err = ds.sendPSyncCmd(ds.source, conf.Options.SourceAuthType, ds.sourcePassword,
+	input, nsize, isFullSync, runId, err = ds.sendPSyncCmd(ds.node.Source, conf.Options.SourceAuthType, ds.node.SourcePassword,
 		conf.Options.SourceTLSEnable, runId)
 	if err != nil {
 		log.Errorf("DbSyncer[%d] Restarting as error occurred initializing PSYNC %v", err)
@@ -156,7 +165,7 @@ func (ds *DbSyncer) Sync() {
 		// sync rdb
 		log.Infof("DbSyncer[%d] rdb file size = %d", ds.id, nsize)
 		base.Status = "full"
-		err := ds.syncRDBFile(reader, ds.target, conf.Options.TargetAuthType, ds.targetPassword, nsize, conf.Options.TargetTLSEnable)
+		err := ds.syncRDBFile(reader, ds.node.Target, conf.Options.TargetAuthType, ds.node.TargetPassword, nsize, conf.Options.TargetTLSEnable)
 		if err != nil {
 			log.Errorf("Restarting DbSyncer[%d] for: %v", ds.id, err)
 			ds.MaxParallelFullSyncs.Release(1)
@@ -175,5 +184,5 @@ func (ds *DbSyncer) Sync() {
 	// sync increment
 	base.Status = "incr"
 	close(ds.WaitFull)
-	ds.syncCommand(reader, ds.target, conf.Options.TargetAuthType, ds.targetPassword, conf.Options.TargetTLSEnable, dbid)
+	ds.syncCommand(reader, ds.node.Target, conf.Options.TargetAuthType, ds.node.TargetPassword, conf.Options.TargetTLSEnable, dbid)
 }

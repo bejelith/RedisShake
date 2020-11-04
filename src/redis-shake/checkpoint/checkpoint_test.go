@@ -1,11 +1,11 @@
 package checkpoint
 
 import (
-	"testing"
 	"fmt"
+	"testing"
 
-	"redis-shake/unit_test_common"
-	"redis-shake/common"
+	"github.com/alibaba/RedisShake/redis-shake/common"
+	"github.com/alibaba/RedisShake/redis-shake/unit_test_common"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -24,7 +24,7 @@ func TestCheckpoint(t *testing.T) {
 		fmt.Printf("TestCheckpoint case %d.\n", nr)
 		nr++
 
-		c := utils.OpenRedisConn([]string{testAddr}, "auth", "", false, false)
+		c, _ := utils.OpenRedisConn([]string{testAddr}, "auth", "", false, false)
 		// clean all
 		_, err := c.Do("flushall")
 		assert.Equal(t, nil, err, "should be equal")
@@ -41,7 +41,7 @@ func TestCheckpoint(t *testing.T) {
 		fmt.Printf("TestCheckpoint case %d.\n", nr)
 		nr++
 
-		c := utils.OpenRedisConn([]string{testAddr}, "auth", "", false, false)
+		c, _ := utils.OpenRedisConn([]string{testAddr}, "auth", "", false, false)
 		// clean all
 		_, err := c.Do("flushall")
 		assert.Equal(t, nil, err, "should be equal")
@@ -64,7 +64,7 @@ func TestCheckpoint(t *testing.T) {
 		fmt.Printf("TestCheckpoint case %d.\n", nr)
 		nr++
 
-		c := utils.OpenRedisConn([]string{testAddr}, "auth", "", false, false)
+		c, _ := utils.OpenRedisConn([]string{testAddr}, "auth", "", false, false)
 		// clean all
 		_, err := c.Do("flushall")
 		assert.Equal(t, nil, err, "should be equal")
@@ -104,7 +104,7 @@ func TestCheckpoint(t *testing.T) {
 		fmt.Printf("TestCheckpoint case %d.\n", nr)
 		nr++
 
-		c := utils.OpenRedisConn([]string{testAddr}, "auth", "", false, false)
+		c, _ := utils.OpenRedisConn([]string{testAddr}, "auth", "", false, false)
 		// clean all
 		_, err := c.Do("flushall")
 		assert.Equal(t, nil, err, "should be equal")
@@ -161,7 +161,7 @@ func TestCheckpoint(t *testing.T) {
 		fmt.Printf("TestCheckpoint case %d.\n", nr)
 		nr++
 
-		c := utils.OpenRedisConn([]string{testAddr}, "auth", "", false, false)
+		c, _ := utils.OpenRedisConn([]string{testAddr}, "auth", "", false, false)
 		// clean all
 		_, err := c.Do("flushall")
 		assert.Equal(t, nil, err, "should be equal")
