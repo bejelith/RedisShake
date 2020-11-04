@@ -1,0 +1,104 @@
+package latencymonitor
+
+import (
+	"fmt"
+	"github.com/alibaba/RedisShake/pkg/libs/atomic2"
+	"github.com/alibaba/RedisShake/pkg/libs/log"
+	utils "github.com/alibaba/RedisShake/redis-shake/common"
+	"github.com/alibaba/RedisShake/redis-shake/dbSync/redisConnWrapper"
+	"strconv"
+	"time"
+)
+
+var KEY_PREFIX = "sinthetic_latency_generator_"
+
+type Producer interface {
+	Run()
+	Stop()
+	Error() error
+}
+
+func NewSyntheticProducer(slots []utils.SlotOwner, password string, tls bool) Producer {
+	keys, masters := calculateKeys(slots)
+	return &producer{
+		slots:      slots,
+		keys:       keys,
+		masters:    masters,
+		password:   password,
+		tls:        tls,
+		runChannel: make(chan struct{}),
+		running:    atomic2.Bool{},
+		redisClusterClientFactory: redisConnWrapper.DefaultRedisClusterFactory,
+	}
+}
+
+type producer struct {
+	slots      []utils.SlotOwner
+	keys       []string
+	runChannel chan struct{}
+	password   string
+	tls        bool
+	masters    []string
+	error      error
+	running    atomic2.Bool
+	redisClusterClientFactory redisConnWrapper.RedisClusterFactory
+}
+
+func (p *producer) Error() error {
+	return p.error
+}
+
+func findKeyInRange(min, max int) string {
+	for i := 0; ; i++ {
+		key := fmt.Sprintf("%s%s", KEY_PREFIX, strconv.Itoa(i))
+		hash := int(crc16(key))
+		if hash >= min && hash <= max {
+			return key
+		}
+	}
+}
+
+func (p *producer) run() {
+	c, err := p.redisClusterClientFactory(p.masters, p.password, p.tls)
+	if err != nil {
+		log.Errorf("Synthetic producer stopped for %v", err)
+		p.error = err
+		return
+	}
+	ticker := time.NewTicker(15 * time.Second)
+	defer c.Close()
+	defer p.Stop()
+	select {
+	case <- ticker.C:
+		for key := range p.keys {
+			now := strconv.Itoa(int(time.Now().UnixNano()))
+			if _, err := c.Do("set", key, now); err != nil {
+				log.Warn("Latency monitor failed to update key %s for %v", key, err)
+			}
+		}
+	case <- p.runChannel:
+		break
+	}
+}
+
+func (p *producer) Run() {
+	if !p.running.CompareAndSwap(false, true) {
+		return
+	}
+	p.runChannel = make(chan struct{})
+	go p.run()
+}
+
+func (p *producer) Stop() {
+	close(p.runChannel)
+}
+
+func calculateKeys(slots []utils.SlotOwner) ([]string, []string) {
+	var keys []string
+	var masters []string
+	for _, slot := range slots {
+		keys = append(keys, findKeyInRange(slot.SlotLeftBoundary, slot.SlotRightBoundary))
+		masters = append(masters, slot.Master)
+	}
+	return keys, masters
+}

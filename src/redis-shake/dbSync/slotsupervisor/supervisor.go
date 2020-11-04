@@ -4,6 +4,7 @@ import (
 	"github.com/alibaba/RedisShake/pkg/libs/errors"
 	"github.com/alibaba/RedisShake/pkg/libs/log"
 	conf "github.com/alibaba/RedisShake/redis-shake/configure"
+	"github.com/alibaba/RedisShake/redis-shake/dbSync/redisConnWrapper"
 	"github.com/alibaba/RedisShake/redis-shake/dbSync/slot"
 	redigo "github.com/garyburd/redigo/redis"
 	"regexp"
@@ -17,14 +18,14 @@ type SlotSupervisor interface {
 
 type slotSupervisor struct {
 	slot             slot.SyncNode
-	redisConnFactory RedisConnFactory
+	redisConnFactory redisConnWrapper.RedisConnFactory
 	maxRetries       int
 }
 
 func New(slot slot.SyncNode) SlotSupervisor {
 	ss := &slotSupervisor{
 		slot:             slot,
-		redisConnFactory: defaultRedisConnFactory,
+		redisConnFactory: redisConnWrapper.DefaultRedisConnFactory,
 		maxRetries:       6,
 	}
 	return ss
