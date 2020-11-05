@@ -6,6 +6,7 @@ import (
 	"github.com/alibaba/RedisShake/pkg/libs/log"
 	utils "github.com/alibaba/RedisShake/redis-shake/common"
 	"github.com/alibaba/RedisShake/redis-shake/dbSync/redisConnWrapper"
+	"github.com/vinllen/redis-go-cluster"
 	"strconv"
 	"time"
 )
@@ -42,6 +43,7 @@ type producer struct {
 	error                     error
 	running                   atomic2.Bool
 	redisClusterClientFactory redisConnWrapper.RedisClusterFactory
+	client 					  *redis.Cluster
 }
 
 func (p *producer) Error() error {
@@ -60,23 +62,24 @@ func findKeyInRange(min, max int) string {
 
 func (p *producer) run() {
 	defer p.Stop()
-	c, err := p.redisClusterClientFactory(p.masters, p.password, p.tls)
+	var err error
+	p.client, err = p.redisClusterClientFactory(p.masters, p.password, p.tls)
 	if err != nil {
 		log.Errorf("SyntheticProducer interrupted for error %v", err)
 		p.error = err
 		return
 	}
 	ticker := time.NewTicker(15 * time.Second)
-	defer c.Close()
+	defer p.client.Close()
 	for {
 		select {
 		case <-ticker.C:
 			for key := range p.keys {
 				now := strconv.Itoa(int(time.Now().UnixNano()))
-				if _, err := c.Do("set", key, now); err != nil {
-					log.Warn("SyntheticProducer failed to update key %s for %v", key, err)
+				if _, err := p.client.Do("set", key, now); err != nil {
+					log.Warnf("SyntheticProducer failed to update key %s for %v", key, err)
 				}else{
-					log.Info("SyntheticProducer set %s to %s", key, now)
+					log.Infof("SyntheticProducer set %s to %s", key, now)
 				}
 			}
 			//if err := c.Flush(); err != nil {

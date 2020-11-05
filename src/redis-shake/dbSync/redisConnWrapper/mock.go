@@ -1,9 +1,11 @@
 package redisConnWrapper
 
+import "github.com/vinllen/redis-go-cluster"
+
 type MockRedisConn struct {
 	DoCount int
 	Host    string
-	DoFunc      func(string, ...interface{}) (interface{}, error)
+	DoFunc  func(string, ...interface{}) (interface{}, error)
 }
 
 func (m MockRedisConn) Close() error {
@@ -30,3 +32,34 @@ func (m MockRedisConn) Receive() (reply interface{}, err error) {
 	panic("implement me")
 }
 
+type MockRedisCluster struct {
+	redis.Cluster
+	DoCount int
+	Host    string
+	DoFunc  func(string, ...interface{}) (interface{}, error)
+}
+
+func (m MockRedisCluster) Close() error {
+	return nil
+}
+
+func (m MockRedisCluster) Err() error {
+	panic("implement me")
+}
+
+func (m MockRedisCluster) Do(commandName string, args ...interface{}) (reply interface{}, err error) {
+	m.DoCount = m.DoCount + 1
+	return m.DoFunc(commandName, args...)
+}
+
+func (m MockRedisCluster) Send(_ string, _ ...interface{}) error {
+	panic("implement me")
+}
+
+func (m MockRedisCluster) Flush() error {
+	panic("implement me")
+}
+
+func (m MockRedisCluster) Receive() (reply interface{}, err error) {
+	panic("implement me")
+}
