@@ -75,6 +75,8 @@ func (p *producer) run() {
 				now := strconv.Itoa(int(time.Now().UnixNano()))
 				if _, err := c.Do("set", key, now); err != nil {
 					log.Warn("SyntheticProducer failed to update key %s for %v", key, err)
+				}else{
+					log.Info("SyntheticProducer set %s to %s", key, now)
 				}
 			}
 			//if err := c.Flush(); err != nil {
