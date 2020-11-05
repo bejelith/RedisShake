@@ -74,12 +74,10 @@ func (p *producer) run() {
 	for {
 		select {
 		case <-ticker.C:
-			for key := range p.keys {
+			for _, key := range p.keys {
 				now := strconv.Itoa(int(time.Now().UnixNano()))
 				if _, err := p.client.Do("set", key, now); err != nil {
 					log.Warnf("SyntheticProducer failed to update key %s for %v", key, err)
-				}else{
-					log.Infof("SyntheticProducer set %s to %s", key, now)
 				}
 			}
 			//if err := c.Flush(); err != nil {
