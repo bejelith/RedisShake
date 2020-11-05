@@ -59,25 +59,26 @@ func findKeyInRange(min, max int) string {
 }
 
 func (p *producer) run() {
+	defer p.Stop()
 	c, err := p.redisClusterClientFactory(p.masters, p.password, p.tls)
 	if err != nil {
-		log.Errorf("Synthetic producer stopped for %v", err)
+		log.Errorf("SyntheticProducer interrupted for error %v", err)
 		p.error = err
 		return
 	}
 	ticker := time.NewTicker(15 * time.Second)
 	defer c.Close()
-	defer p.Stop()
 	select {
 	case <-ticker.C:
 		for key := range p.keys {
 			now := strconv.Itoa(int(time.Now().UnixNano()))
 			if _, err := c.Do("set", key, now); err != nil {
-				log.Warn("Latency monitor failed to update key %s for %v", key, err)
+				log.Warn("SyntheticProducer failed to update key %s for %v", key, err)
 			}
 		}
 		c.Flush()
 	case <-p.runChannel:
+		log.Info("SyntheticProducer stopping")
 		break
 	}
 }
@@ -86,12 +87,13 @@ func (p *producer) Run() {
 	if !p.running.CompareAndSwap(false, true) {
 		return
 	}
-	log.Info("Latency monitor started producing timestamps")
+	log.Info("SyntheticProducer started producing timestamps")
 	p.runChannel = make(chan struct{})
 	go p.run()
 }
 
 func (p *producer) Stop() {
+	log.Info("SyntheticProducer stop called, waiting to finish")
 	p.running.Set(false)
 	close(p.runChannel)
 }
