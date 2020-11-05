@@ -77,9 +77,9 @@ func (p *producer) run() {
 					log.Warn("SyntheticProducer failed to update key %s for %v", key, err)
 				}
 			}
-			if err := c.Flush(); err != nil {
-				log.Warnf("SyntheticProducer error found when flushing commands to target cluster %v", err)
-			}
+			//if err := c.Flush(); err != nil {
+			//	log.Warnf("SyntheticProducer error found when flushing commands to target cluster %v", err)
+			//}
 		case <-p.runChannel:
 			log.Info("SyntheticProducer stopping")
 			break
