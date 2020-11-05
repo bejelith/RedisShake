@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-func CalcLatency(cmd string, args [][]byte, dsId int){
+func CalcLatency(args [][]byte, dsId int){
 	key := string(args[0])
 	if keyPrefixRegex.MatchString(key){
 		value := string(args[1])
