@@ -43,7 +43,7 @@ type producer struct {
 	error                     error
 	running                   atomic2.Bool
 	redisClusterClientFactory redisConnWrapper.RedisClusterFactory
-	client 					  *redis.Cluster
+	client                    *redis.Cluster
 }
 
 func (p *producer) Error() error {
@@ -53,7 +53,7 @@ func (p *producer) Error() error {
 func findKeyInRange(min, max int) string {
 	for i := 0; ; i++ {
 		key := fmt.Sprintf("%s%s", KeyPrefix, strconv.Itoa(i))
-		hash := int(crc16(key))
+		hash := int(crc16(key) & (16384 - 1))
 		if hash >= min && hash <= max {
 			return key
 		}
