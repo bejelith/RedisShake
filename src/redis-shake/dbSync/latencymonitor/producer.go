@@ -89,7 +89,7 @@ func (p *producer) Run() {
 	if !p.running.CompareAndSwap(false, true) {
 		return
 	}
-	log.Info("SyntheticProducer started producing timestamps")
+	log.Info("SyntheticProducer started producing timestamps for source cluster %s for keys %v", p.masters, p.keys)
 	p.runChannel = make(chan struct{})
 	go p.run()
 }
