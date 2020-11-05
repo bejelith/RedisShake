@@ -8,8 +8,11 @@ import (
 )
 
 func CalcLatency(cmd string, args [][]byte, dsId int) {
+	if cmd != "set" || len(args) < 2 {
+		return
+	}
 	key := string(args[0])
-	if cmd == "set" && keyPrefixRegex.MatchString(key) {
+	if keyPrefixRegex.MatchString(key) {
 		value := string(args[1])
 		messageTime, err := strconv.Atoi(value)
 		if err != nil {
