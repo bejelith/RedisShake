@@ -7,16 +7,16 @@ import (
 	"time"
 )
 
-func CalcLatency(args [][]byte, dsId int){
+func CalcLatency(cmd string, args [][]byte, dsId int) {
 	key := string(args[0])
-	if keyPrefixRegex.MatchString(key){
+	if cmd == "set" && keyPrefixRegex.MatchString(key) {
 		value := string(args[1])
-		messageTime, err  := strconv.Atoi(value)
+		messageTime, err := strconv.Atoi(value)
 		if err != nil {
 			log.Warnf("CalcLatency: Invalid latency value read from key %s: %v", key, err)
 			return
 		}
-		delta:=time.Now().UnixNano() - int64(messageTime)
+		delta := time.Now().UnixNano() - int64(messageTime)
 		metric.GetMetric(dsId).SourceLatency.Add(delta)
 	}
 }
