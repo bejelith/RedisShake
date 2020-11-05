@@ -13,7 +13,7 @@ func CalcLatency(args [][]byte, dsId int){
 		value := string(args[1])
 		messageTime, err  := strconv.Atoi(value)
 		if err != nil {
-			log.Warnf("Invalid latency value read from key %s: %v", key, err)
+			log.Warnf("CalcLatency: Invalid latency value read from key %s: %v", key, err)
 			return
 		}
 		delta:=time.Now().UnixNano() - int64(messageTime)
