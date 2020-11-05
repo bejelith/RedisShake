@@ -199,7 +199,7 @@ func (ds *DbSyncer) parseSourceCommand(reader *bufio.Reader) {
 			log.PanicErrorf(err, "DbSyncer[%d] parse command arguments failed[%v]", ds.id, err)
 		} else {
 			metric.GetMetric(ds.id).AddPullCmdCount(ds.id, 1)
-			latencymonitor.CalcLatency(argv, ds.id)
+			latencymonitor.CalcLatency(sCmd, argv, ds.id)
 
 			if sCmd != "ping" {
 				if strings.EqualFold(sCmd, "select") {
