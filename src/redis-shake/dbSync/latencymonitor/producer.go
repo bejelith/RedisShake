@@ -12,6 +12,7 @@ import (
 )
 
 var KeyPrefix = "synthetic_latency_generator_"
+var tickDuration = 15 * time.Second
 
 type Producer interface {
 	Run()
@@ -69,14 +70,14 @@ func (p *producer) run() {
 		p.error = err
 		return
 	}
-	ticker := time.NewTicker(15 * time.Second)
+	ticker := time.NewTicker(tickDuration)
 	defer p.client.Close()
 	for {
 		select {
 		case <-ticker.C:
 			for _, key := range p.keys {
 				now := strconv.Itoa(int(time.Now().UnixNano()))
-				if _, err := p.client.Do("set", key, now); err != nil {
+				if _, err := p.client.Do("set", key, now, "EX", tickDuration/time.Second); err != nil {
 					log.Warnf("SyntheticProducer failed to update key %s for %v", key, err)
 				}
 			}
