@@ -17,17 +17,14 @@ func DefaultRedisConnFactory(host, password string, tlsEnable bool) (redigo.Conn
 	return redigo.NewConn(conn, 0, 0), nil
 }
 
-type RedisClusterFactory func(masters []string, password string, tlsEnable bool) (*redis.Cluster, error)
+type ClusterI interface{
+	Do(commandName string, args ...interface{}) (reply interface{}, err error)
+	Close()
+}
 
-//func DefaultRedisClusterFactory(masters []string, password string, tlsEnable bool) (redigo.Conn, error) {
-//	conn, err := utils.OpenRedisConn(masters, "auth", password, true, tlsEnable)
-//	if err != nil {
-//		return nil, err
-//	}
-//	return conn, nil
-//}
+type RedisClusterFactory func(masters []string, password string, tlsEnable bool) (ClusterI, error)
 
-func DefaultRedisClusterFactory(masters []string, password string, tlsEnable bool) (*redis.Cluster, error) {
+func DefaultRedisClusterFactory(masters []string, password string, tlsEnable bool) (ClusterI, error) {
 	options := &redis.Options{
 		StartNodes:  masters,
 		ConnTimeout: time.Second * 2,

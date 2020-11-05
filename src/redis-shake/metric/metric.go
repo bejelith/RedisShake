@@ -94,6 +94,7 @@ type Metric struct {
 	FullSyncProgress uint64
 	TargetTimeSpent atomic2.Int64
 	RetryCounter    int
+	SourceLatency   atomic2.Int64
 }
 
 func CreateMetric(r base.Runner) {

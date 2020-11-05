@@ -6,12 +6,13 @@ import (
 	"github.com/alibaba/RedisShake/pkg/libs/log"
 	utils "github.com/alibaba/RedisShake/redis-shake/common"
 	"github.com/alibaba/RedisShake/redis-shake/dbSync/redisConnWrapper"
-	"github.com/vinllen/redis-go-cluster"
+	"regexp"
 	"strconv"
 	"time"
 )
 
-var KeyPrefix = "synthetic_latency_generator_"
+var keyPrefix = "synthetic_latency_generator_"
+var keyPrefixRegex, _ = regexp.Compile("^"+ keyPrefix +"\\d+$")
 var tickDuration = 15 * time.Second
 
 type Producer interface {
@@ -44,7 +45,7 @@ type producer struct {
 	error                     error
 	running                   atomic2.Bool
 	redisClusterClientFactory redisConnWrapper.RedisClusterFactory
-	client                    *redis.Cluster
+	client                    redisConnWrapper.ClusterI
 }
 
 func (p *producer) Error() error {
@@ -53,7 +54,7 @@ func (p *producer) Error() error {
 
 func findKeyInRange(min, max int) string {
 	for i := 0; ; i++ {
-		key := fmt.Sprintf("%s%s", KeyPrefix, strconv.Itoa(i))
+		key := fmt.Sprintf("%s%s", keyPrefix, strconv.Itoa(i))
 		hash := int(crc16(key) & (16384 - 1))
 		if hash >= min && hash <= max {
 			return key
@@ -77,7 +78,7 @@ func (p *producer) run() {
 		case <-ticker.C:
 			for _, key := range p.keys {
 				now := strconv.Itoa(int(time.Now().UnixNano()))
-				if _, err := p.client.Do("set", key, now, "EX", tickDuration/time.Second); err != nil {
+				if _, err := p.client.Do("set", key, now, "EX", strconv.Itoa(int(tickDuration/time.Second))); err != nil {
 					log.Warnf("SyntheticProducer failed to update key %s for %v", key, err)
 				}
 			}
@@ -86,7 +87,7 @@ func (p *producer) run() {
 			//}
 		case <-p.runChannel:
 			log.Info("SyntheticProducer stopping")
-			break
+			return
 		}
 	}
 }
@@ -102,8 +103,9 @@ func (p *producer) Run() {
 
 func (p *producer) Stop() {
 	log.Info("SyntheticProducer stop called, waiting to finish")
-	p.running.Set(false)
-	close(p.runChannel)
+	if p.running.CompareAndSwap(true, false) {
+		close(p.runChannel)
+	}
 }
 
 func calculateKeys(slots []utils.SlotOwner) ([]string, []string) {
