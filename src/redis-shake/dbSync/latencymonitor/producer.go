@@ -68,18 +68,20 @@ func (p *producer) run() {
 	}
 	ticker := time.NewTicker(15 * time.Second)
 	defer c.Close()
-	select {
-	case <-ticker.C:
-		for key := range p.keys {
-			now := strconv.Itoa(int(time.Now().UnixNano()))
-			if _, err := c.Do("set", key, now); err != nil {
-				log.Warn("SyntheticProducer failed to update key %s for %v", key, err)
+	for {
+		select {
+		case <-ticker.C:
+			for key := range p.keys {
+				now := strconv.Itoa(int(time.Now().UnixNano()))
+				if _, err := c.Do("set", key, now); err != nil {
+					log.Warn("SyntheticProducer failed to update key %s for %v", key, err)
+				}
 			}
+			c.Flush()
+		case <-p.runChannel:
+			log.Info("SyntheticProducer stopping")
+			break
 		}
-		c.Flush()
-	case <-p.runChannel:
-		log.Info("SyntheticProducer stopping")
-		break
 	}
 }
 
