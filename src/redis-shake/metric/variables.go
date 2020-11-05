@@ -33,6 +33,7 @@ type MetricRest struct {
 	TargetAddress        interface{}
 	Details              interface{} // other details info
 	RetryCount           interface{}
+	SourceLatency        int64
 }
 
 func NewMetricRest() []MetricRest {
@@ -75,6 +76,7 @@ func NewMetricRest() []MetricRest {
 			NetworkSpeed:         singleMetric.GetNetworkFlow(),
 			NetworkFlowTotal:     singleMetric.GetNetworkFlowTotal(),
 			TargetTimeSpent:      singleMetric.TargetTimeSpent.Get(),
+			SourceLatency:        singleMetric.SourceLatency.Get(),
 			FullSyncProgress:     singleMetric.GetFullSyncProgress(),
 			RetryCount:           singleMetric.RetryCounter,
 			Status:               base.Status,

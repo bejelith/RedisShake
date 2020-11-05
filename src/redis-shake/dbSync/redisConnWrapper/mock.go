@@ -1,7 +1,5 @@
 package redisConnWrapper
 
-import "github.com/vinllen/redis-go-cluster"
-
 type MockRedisConn struct {
 	DoCount int
 	Host    string
@@ -33,14 +31,13 @@ func (m MockRedisConn) Receive() (reply interface{}, err error) {
 }
 
 type MockRedisCluster struct {
-	redis.Cluster
 	DoCount int
 	Host    string
 	DoFunc  func(string, ...interface{}) (interface{}, error)
 }
 
-func (m MockRedisCluster) Close() error {
-	return nil
+func (m MockRedisCluster) Close() {
+	return
 }
 
 func (m MockRedisCluster) Err() error {
