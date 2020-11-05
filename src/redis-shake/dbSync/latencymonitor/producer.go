@@ -77,7 +77,9 @@ func (p *producer) run() {
 					log.Warn("SyntheticProducer failed to update key %s for %v", key, err)
 				}
 			}
-			c.Flush()
+			if err := c.Flush(); err != nil {
+				log.Warnf("SyntheticProducer error found when flushing commands to target cluster %v", err)
+			}
 		case <-p.runChannel:
 			log.Info("SyntheticProducer stopping")
 			break
@@ -89,7 +91,7 @@ func (p *producer) Run() {
 	if !p.running.CompareAndSwap(false, true) {
 		return
 	}
-	log.Info("SyntheticProducer started producing timestamps for source cluster %s for keys %v", p.masters, p.keys)
+	log.Infof("SyntheticProducer started producing timestamps for source cluster %v with keys %v", p.masters, p.keys)
 	p.runChannel = make(chan struct{})
 	go p.run()
 }
