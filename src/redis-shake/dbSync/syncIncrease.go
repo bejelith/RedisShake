@@ -9,6 +9,7 @@ import (
 	"github.com/alibaba/RedisShake/pkg/redis"
 	"github.com/alibaba/RedisShake/redis-shake/common"
 	"github.com/alibaba/RedisShake/redis-shake/configure"
+	"github.com/alibaba/RedisShake/redis-shake/dbSync/latencymonitor"
 	"github.com/alibaba/RedisShake/redis-shake/filter"
 	"io"
 	"net"
@@ -198,6 +199,7 @@ func (ds *DbSyncer) parseSourceCommand(reader *bufio.Reader) {
 			log.PanicErrorf(err, "DbSyncer[%d] parse command arguments failed[%v]", ds.id, err)
 		} else {
 			metric.GetMetric(ds.id).AddPullCmdCount(ds.id, 1)
+			latencymonitor.CalcLatency(argv, ds.id)
 
 			if sCmd != "ping" {
 				if strings.EqualFold(sCmd, "select") {
