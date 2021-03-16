@@ -14,6 +14,7 @@ require (
 	github.com/gugemichael/nimo4go v0.0.0-20190904073057-32795d80f83a
 	github.com/matttproud/golang_protobuf_extensions v1.0.2-0.20181231171920-c182affec369 // indirect
 	github.com/nightlyone/lockfile v0.0.0-20180618180623-0ad87eef1443
+	github.com/pkg/errors v0.8.0
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/prometheus/client_golang v1.0.1-0.20190617182757-3d8379da8fc2
 	github.com/prometheus/client_model v0.0.0-20190129233127-fd36f4220a90 // indirect
@@ -22,6 +23,7 @@ require (
 	github.com/satori/go.uuid v1.2.1-0.20181028125025-b2ce2384e17b // indirect
 	github.com/stretchr/testify v1.3.1-0.20190311161405-34c6fa2dc709
 	github.com/vinllen/redis-go-cluster v1.0.1-0.20200724054240-c957918bbc61
+	golang.org/x/sync v0.0.0-20181221193216-37e7f081c4d4
 	golang.org/x/sys v0.0.0-20190904005037-43c01164e931 // indirect
 	gopkg.in/check.v1 v0.0.0-20161208181325-20d25e280405
 	gopkg.in/natefinch/lumberjack.v2 v2.0.0-20170531160350-a96e63847dc3
