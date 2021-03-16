@@ -1,10 +1,11 @@
 package latencymonitor
 
 import (
-	"github.com/alibaba/RedisShake/pkg/libs/log"
-	"github.com/alibaba/RedisShake/redis-shake/metric"
 	"strconv"
 	"time"
+
+	"github.com/alibaba/RedisShake/pkg/libs/log"
+	"github.com/alibaba/RedisShake/redis-shake/metric"
 )
 
 func CalcLatency(cmd string, args [][]byte, dsId int) {
