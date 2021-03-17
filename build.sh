@@ -1,6 +1,7 @@
 #!/bin/bash
 
 set -o errexit
+unset GOPATH
 
 MODULE_NAME=$(grep module src/go.mod |cut -d ' ' -f 2)
 

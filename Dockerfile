@@ -1,14 +1,14 @@
-FROM docker-dev-artifactory.workday.com/dpm/golang:1.14-alpine-gcc
+FROM golang:1.14-buster
 # Assumes gcc and bash are present
 # RUN apk add git bash gcc
 
-COPY . .
 ARG goproxy=""
 ENV GOPROXY=$goproxy
+COPY ./ .
+RUN /bin/bash -x ./build.sh
 
-RUN ./build.sh
 
-FROM docker-dev-artifactory.workday.com/dpm/golang:1.14-alpine
+FROM golang:1.15-alpine
 
 COPY --from=0 /go/bin/redis-shake.linux /usr/local/app/redis-shake
 COPY --from=0 /go/wdconfig.conf /usr/local/app/redis-shake.conf

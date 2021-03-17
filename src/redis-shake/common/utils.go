@@ -876,6 +876,13 @@ RESTORE:
 				log.Warnf("target key name is busy but ignore: %v", string(e.Key))
 			case "none":
 				return errors.Errorf("target key name is busy: %v", string(e.Key))
+
+			}
+		} else if strings.Contains(err.Error(), "Bad data format") {
+			// from big version to small version may has this error. we need to split the data struct
+			log.Warnf("return error[%v], ignore it and try to split the value", err)
+			if err := restoreBigRdbEntry(c, e); err != nil {
+				log.Panic(err)
 			}
 		} else {
 			return errors.Errorf("restore command error key:", string(e.Key), " err: ", err)
