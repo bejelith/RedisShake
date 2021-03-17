@@ -8,9 +8,9 @@ import (
 	"bytes"
 	"fmt"
 	"io/ioutil"
-	"strconv"
 	"sync"
 	"time"
+	"strconv"
 
 	"github.com/alibaba/RedisShake/pkg/libs/atomic2"
 	"github.com/alibaba/RedisShake/pkg/libs/log"
@@ -20,6 +20,7 @@ import (
 	"github.com/alibaba/RedisShake/redis-shake/common"
 	"github.com/alibaba/RedisShake/redis-shake/configure"
 	"github.com/alibaba/RedisShake/redis-shake/filter"
+
 )
 
 type CmdRestore struct {
