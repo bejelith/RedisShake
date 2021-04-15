@@ -1,11 +1,11 @@
 package checkpoint
 
 import (
-	"testing"
 	"fmt"
+	"testing"
 
-	"redis-shake/unit_test_common"
-	"redis-shake/common"
+	utils "github.com/alibaba/RedisShake/redis-shake/common"
+	"github.com/alibaba/RedisShake/redis-shake/unit_test_common"
 
 	"github.com/stretchr/testify/assert"
 )
