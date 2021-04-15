@@ -43,7 +43,8 @@ run_builder='go build -v'
 main_package="$MODULE_NAME/redis-shake/main"
 
 cd src
-goos=(linux darwin windows)
+#goos=(linux darwin windows)
+goos=(linux)
 for g in "${goos[@]}"; do
     export GOOS=$g
     echo "try build goos=$g"
@@ -65,7 +66,7 @@ cp -r test ${integration_test}/
 
 if [ "Linux" == "$(uname -s)" ];then
 	# hypervisor
-	gcc -Wall -O3 scripts/hypervisor.c -o ${output}/hypervisor -lpthread
+	gcc -Wall -O3 scripts/hypervisor.c -o ${GOBIN}/hypervisor -lpthread
 elif [ "Darwin" == "$(uname -s)" ];then
 	printf "\\nWARNING !!! MacOS doesn't supply hypervisor\\n"
 fi
