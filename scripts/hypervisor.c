@@ -104,6 +104,55 @@ static int parseopt(int argc, char *argv[])
 	return 0;
 }
 
+static void deal_redirect(char *cmdopt[]) {
+	int i;
+	char *cmdstr, *openmode;
+	FILE *altout=NULL;
+	FILE *alterr=NULL;
+	
+	for(i = 0;i < MAXOPT; i++){
+		cmdstr = cmdopt[i];
+		if(cmdstr == NULL)
+			break;
+		
+		if(strncmp(cmdstr, "1>", strlen("1>")) == 0) {
+			cmdstr +=2;
+			openmode = "w";
+
+			if(*cmdstr == '>') {
+				cmdstr++;
+				openmode = "a";
+			}
+			if ((altout = fopen(cmdstr, openmode)) != NULL) {
+				dup2(fileno(altout), STDOUT_FILENO);
+			}
+		}
+
+		if(strncmp(cmdstr, "2>", strlen("2>")) == 0) {
+			cmdstr +=2;
+			openmode = "w";
+
+			if(*cmdstr == '>') {
+				cmdstr++;
+				openmode = "a";
+			} else if(*cmdstr == '&') {
+				if(*++cmdstr == '1' && altout != NULL) {
+					dup2(fileno(altout), STDERR_FILENO);
+					continue;
+				}
+			}
+
+			if ((alterr = fopen(cmdstr, openmode)) != NULL) {
+				dup2(fileno(alterr), STDERR_FILENO);
+			}
+		}
+	}
+	if(altout != NULL)
+		fclose(altout);
+	if(alterr != NULL)
+		fclose(alterr);
+}
+
 static int set_nonblock(int fd)
 {
 	int flags = fcntl(fd, F_GETFL, 0);
@@ -139,7 +188,7 @@ static int getstatus(char *buf, int size, int status)
 
 
 void go_daemon() {
-	int fd;
+	// int fd;
 
 	if (fork() != 0) exit(0); /*  parent exits */
 	setsid(); /*  create a new session */
@@ -147,12 +196,13 @@ void go_daemon() {
 	/*  Every output goes to /dev/null. If Redis is daemonized but
 	 *       * the 'logfile' is set to 'stdout' in the configuration file
 	 *            * it will not log at all. */
-	if ((fd = open("/tmp/mongo4bls.output", O_RDWR, 0)) != -1) {
+/* 	if ((fd = open("/tmp/mongo4bls.output", O_RDWR, 0)) != -1) {
 		dup2(fd, STDIN_FILENO);
 		dup2(fd, STDOUT_FILENO);
 		dup2(fd, STDERR_FILENO);                                                                                                                        
 		if (fd > STDERR_FILENO) close(fd);
 	}    
+ */
 }
 
 
@@ -234,7 +284,7 @@ int main(int argc, char *argv[])
 				}
 			}
 
-			fprintf(stderr, "- process: \"%s\" exit, restart it\n", cmd);
+			fprintf(stderr, "- process: \"%s\" exit, restart it in %d seconds\n", cmd, ssec);
 
 			sleep(ssec);
 
@@ -248,6 +298,7 @@ int main(int argc, char *argv[])
 		} else {
 			close(pipefd[0]);
 			fprintf(stderr, "- execute: \"%s\"\n", cmd);
+			deal_redirect(cmdopt);
 			if(execvp(cmd, cmdopt) < 0){
 				fprintf(stderr, "- execute: \"%s\" error, %s\n", cmd, strerror(errno));
 				exit(-1);
