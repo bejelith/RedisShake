@@ -74,6 +74,16 @@ User can use `-version` to print the version.
 # Usage
 ---
 You can **directly download** the binary in the [release package](https://github.com/alibaba/RedisShake/releases), and use `start.sh` script to start it directly: `./start.sh redis-shake.conf sync`.<br>
+---
+也可以自行编译, 以下步骤go 1.14版本有效（1.16会有小错）:
+*  git clone go_mod版本
+*  cd RedisShake
+*  export GOPATH=\`pwd\`
+*  ./build.sh
+*  ./bin/redis-shake -type=$(type_must_be_sync_dump_restore_decode_or_rump) -conf=conf/redis-shake.conf #please note: user must modify collector.conf first to match needs.
+
+---
+以下内容已经过时
 You can also build redis-shake yourself according to the following steps, the `go` and `govendor` must be installed before compile:
 *  git clone https://github.com/alibaba/RedisShake.git
 *  cd RedisShake
