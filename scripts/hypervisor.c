@@ -31,6 +31,57 @@
 	fprintf(stderr, "Usage : %s [--daemon] --exec=\"command arg1 arg2 arg3 ...\"\n", argv[0]); \
 }while(0)
 
+/* Child process PID, and atomic functions to get and set it.
+ * Do not access the internal_child_pid, except using the set_ and get_ functions.
+*/
+static pid_t   internal_child_pid = 0;
+static inline void  set_child_pid(pid_t p) { __atomic_store_n(&internal_child_pid, p, __ATOMIC_SEQ_CST);    }
+static inline pid_t get_child_pid(void)    { return __atomic_load_n(&internal_child_pid, __ATOMIC_SEQ_CST); }
+static int kill_child_before_exit = 0;
+
+typedef void (*xsa_sigaction)(int, siginfo_t *, void *) ;
+
+static int handle_signal(const int signum, xsa_sigaction sa_handle)
+{
+    struct sigaction act;
+
+    memset(&act, 0, sizeof act);
+    sigemptyset(&act.sa_mask);
+    act.sa_sigaction = sa_handle;
+    act.sa_flags = SA_SIGINFO | SA_RESTART;
+
+    if (sigaction(signum, &act, NULL))
+        return errno;
+
+    return 0;
+}
+
+static void handle_sigalrm(int signum, siginfo_t *info, void *context)
+{
+    if (kill_child_before_exit == 1) {
+		const pid_t target = get_child_pid();
+
+		if (target != 0 && info->si_pid != target)
+			kill(target, SIGKILL);
+	}
+    exit(0);
+}
+
+static void forward_handler(int signum, siginfo_t *info, void *context)
+{
+    const pid_t target = get_child_pid();
+
+    if (target != 0 && info->si_pid != target) {
+        kill(target, signum);
+		kill_child_before_exit = 1;
+		handle_signal(SIGALRM, handle_sigalrm);
+		// kill child -9 after 2 seconds and exit
+		alarm(2);
+	} else if(signum == SIGTERM || signum == SIGINT || signum == SIGSTOP ) {
+		exit(0);
+	}
+}
+
 static char *cmd, *cmdopt[MAXOPT + 1];
 static int daemonize;
 
@@ -220,6 +271,12 @@ int main(int argc, char *argv[])
 
 	daemonize ? go_daemon() : 0;
 
+    /* Install signal forwarders. */
+    if (handle_signal(SIGTERM, forward_handler)) {
+        fprintf(stderr, "Cannot install signal handlers: %s.\n", strerror(errno));
+        return EXIT_FAILURE;
+    }
+
 	while(1){
 		if(pipe(pipefd) < 0){
 			fprintf(stderr, "- make pipe error : %s\n", strerror(errno));
@@ -235,6 +292,7 @@ int main(int argc, char *argv[])
 			fprintf(stderr, "- call fork() error : %s\n", strerror(errno));
 			exit(-1);
 		} else if (pid > 0){
+			set_child_pid(pid);
 			close(pipefd[1]);
 			alive = waited = 1;
 			isdaemon = 0;
